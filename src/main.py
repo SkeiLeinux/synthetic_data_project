@@ -1,33 +1,26 @@
 from data_manager import DataManager
-from generator import generate_synthetic_data
+import pandas as pd
 
 
 def main():
-    # Конфигурация БД
-    db_config = {
-        'dbname': 'synthetic_db',
-        'user': 'postgres',
-        'password': 'your_password',
-        'host': 'localhost',
-        'port': 5432
-    }
+    dm = DataManager()
 
-    dm = DataManager(db_config)
+    # Проверка чтения данных
+    query = "SELECT * FROM synthetic_data_schema.raw_data;"
+    df = dm.load_data(query)
+    print("Исходные данные из БД:")
+    print(df)
 
-    # Загрузка данных из БД
-    query = "SELECT * FROM raw_data;"
-    original_df = dm.load_data(query)
+    # Проверка записи данных (сделаем новую таблицу для теста)
+    test_data = pd.DataFrame({
+        'column_1': ['example_1', 'example_2'],
+        'column_2': [123, 456],
+        'column_3': [1.23, 4.56]
+    })
 
-    print("Original data:")
-    print(original_df.head())
+    dm.save_data(test_data, 'test_table')
 
-    # Генерация синтетических данных
-    synthetic_df = generate_synthetic_data(original_df)
-
-    print("Synthetic data:")
-    print(synthetic_df.head())
-
-    dm.close()
+    print("✅ Данные успешно записаны в таблицу test_table.")
 
 
 if __name__ == "__main__":
