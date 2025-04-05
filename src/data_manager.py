@@ -4,14 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 
 class DataManager:
-    def __init__(self):
-        self.db_config = {
-            'dbname': 'synthetic_data_db',
-            'user': 'postgres',             # Имя пользователя
-            'password': '111',              # Пароль от БД PostgreSQL
-            'host': 'localhost',
-            'port': 5432
-        }
+    def __init__(self, config):
+        self.db_config = config
         # Подключение через SQLAlchemy для удобной работы с pandas
         self.engine = create_engine(
             f"postgresql+psycopg2://{self.db_config['user']}:{self.db_config['password']}@"
@@ -35,3 +29,9 @@ class DataManager:
             print("✅ Подключение к базе данных успешно!")
         except Exception as e:
             print(f"❌ Ошибка подключения: {e}")
+
+    def close(self):
+        """
+        Закрытие соединения с базой
+        """
+        self.engine.dispose()
