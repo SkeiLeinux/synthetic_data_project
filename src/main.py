@@ -35,11 +35,26 @@ def main():
     print("\n📊 Статистика исходных данных:")
     print(stats)
 
-    # Генерация синтетических данных (заглушка)
+    # Укажи толерантности (допустимые отклонения)
+    tolerances = {
+        'column_int': {'percent': 10},  # целое число
+        'column_float': {'percent': 5},  # число с плавающей точкой
+        'column_date': {'days': 3},  # дата
+        'column_timestamp': {'minutes': 60},  # дата-время (таймстамп)
+    }
+
     synthetic_df = generate_synthetic_data(processed_df)
 
-    print("\n🎲 Сгенерированные синтетические данные:")
-    print(synthetic_df.head())
+    stats_ok, violations = processor.compare_statistics(synthetic_df, tolerances)
+
+    if stats_ok:
+        print("✅ Статистики в допустимых пределах.")
+    else:
+        print("⚠️ Нарушения статистик:")
+        for key, msg in violations.items():
+            print(123123123123123123123)
+            print(f"{key}: {msg}")
+    print(synthetic_df)
 
     dm.close()
 
