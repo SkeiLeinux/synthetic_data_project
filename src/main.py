@@ -54,6 +54,7 @@ def main():
         for key, msg in violations.items():
             print(123123123123123123123)
             print(f"{key}: {msg}")
+
     print(synthetic_df)
 
     dm.close()
