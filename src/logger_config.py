@@ -15,7 +15,7 @@ def setup_logger(name: str):
     logger.addHandler(console_handler)
 
     # Запись в файл
-    file_handler = logging.FileHandler('logs/app.log', mode='a')
+    file_handler = logging.FileHandler('logs/app.log', mode='a', encoding = "UTF-8")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 

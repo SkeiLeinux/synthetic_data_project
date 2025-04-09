@@ -22,7 +22,8 @@ class DataManager:
     def test_connection(self):
         try:
             with self.engine.connect() as connection:
-                connection.execute(config['QUERIES']['test_query'])
+                # connection.execute(config['QUERIES']['test_query'])
+                connection.execute(text("SELECT 1;"))
             logger.info("Подключение к базе данных успешно!")
         except Exception as e:
             logger.info(f"Ошибка подключения: {e}")

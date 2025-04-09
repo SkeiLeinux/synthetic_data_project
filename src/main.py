@@ -29,6 +29,7 @@ def main():
 
     # Параметры отклонений
     tolerances = {
+        # config.get('')
         'column_2': {'absolute': config.getint('TOLERANCES', 'column_int_absolute')},
         'column_3': {'percent': config.getint('TOLERANCES', 'column_float_percent')},
         'created_at': {
@@ -43,6 +44,7 @@ def main():
     logger.info("Подключение и загрузка данных из БД")
     dm = DataManager()
     dm.test_connection()
+
     original_df = dm.load_data(raw_data_query)
     logger.info(f"Загружено {len(original_df)} записей")
 
