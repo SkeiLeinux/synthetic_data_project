@@ -4,3 +4,5 @@ pip freeze > requirements.txt
 pandas~=2.2.2
 numpy~=2.1.0
 SQLAlchemy~=2.0.40
+joblib~=1.4.2
+ctgan~=0.11.0
