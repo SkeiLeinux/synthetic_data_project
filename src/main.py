@@ -51,8 +51,8 @@ def main():
     processor = DataProcessor(original_df)
     processed_df = processor.preprocess()
 
-    quasi_identifiers = ['column_1', 'column_2']
-    sensitive_attribute = 'column_3'
+    quasi_identifiers = config['ANONYMITY']['quasi_identifiers']
+    sensitive_attribute = config['ANONYMITY']['sensitive_attribute']
 
     max_iterations = 10
     for iteration in range(1, max_iterations + 1):
