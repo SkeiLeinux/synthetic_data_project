@@ -1,0 +1,56 @@
+E:\Учеба\курсач\попытка накодить 1\synthetic_data_project\нейросеть\main.py:106: DeprecationWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+  return float(syn.groupby(quasi_ids, group_keys=False).apply(emd).max())
+k‑анонимность = 61 (≥10?)
+l‑разнообразие = 10 (≥3?)
+t‑близость   = 0.4424 (<0.3?)
+Generating report ...
+
+(1/2) Evaluating Column Shapes: |████████████████████████████████████████████████████| 20/20 [00:00<00:00, 159.35it/s]|
+Column Shapes Score: 89.62%
+
+(2/2) Evaluating Column Pair Trends: |█████████████████████████████████████████████| 190/190 [00:01<00:00, 168.25it/s]|
+Column Pair Trends Score: 81.34%
+
+Overall Score (Average): 85.48%
+
+
+=== Общая оценка качества синтетики ===
+Итоговая оценка: 85.48%
+
+— Column Shapes —
+            Column        Metric     Score
+0              age  KSComplement  0.962377
+1        workclass  TVComplement  0.968750
+2           fnlwgt  KSComplement  0.952434
+3        education  TVComplement  0.893543
+4    education-num  KSComplement  0.919533
+5   marital-status  TVComplement  0.949862
+6       occupation  TVComplement  0.890279
+7     relationship  TVComplement  0.909436
+8             race  TVComplement  0.975084
+9              sex  TVComplement  0.988560
+10    capital-gain  KSComplement  0.293957
+11    capital-loss  KSComplement  0.576205
+12  hours-per-week  KSComplement  0.946483
+13  native-country  TVComplement  0.887093
+14          income  TVComplement  0.978002
+15         age_bin  TVComplement  0.972935
+16         edu_bin  TVComplement  0.980114
+17     marital_bin  TVComplement  0.982801
+18        race_bin  TVComplement  1.000000
+
+— Column Pair Trends —
+        Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.897689               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.967985         -0.078932              -0.014902
+2            age       education  ContingencySimilarity  0.845708               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.982233          0.035960               0.071495
+4            age  marital-status  ContingencySimilarity  0.845554               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.955736               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.972935               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.950783               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.980114               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.982801               NaN                    NaN
+
+[171 rows x 6 columns]
