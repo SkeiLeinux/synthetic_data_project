@@ -54,7 +54,6 @@ def main():
     quasi_identifiers = [col.strip() for col in config['ANONYMITY']['quasi_identifiers'].split(',')]
     sensitive_attribute = config['ANONYMITY']['sensitive_attribute']
 
-    # параметры генератора
     generator_cfg = config['GENERATOR']
     model_name = generator_cfg.get('model_name', 'copulagan')
     epochs = generator_cfg.getint('epochs', fallback=300)
