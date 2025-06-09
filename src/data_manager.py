@@ -31,7 +31,7 @@ class DataManager:
         except Exception as e:
             logger.info(f"Ошибка подключения: {e}")
 
-    def load_data(self, query_raw_data):
+    def load_data_from_db(self, query_raw_data):
         try:
             logger.info("Загрузка данных из базы")
             df = pd.read_sql(query_raw_data, self.engine)
@@ -39,6 +39,21 @@ class DataManager:
             return df
         except Exception as e:
             logger.exception("Ошибка при загрузке данных")
+            raise
+
+    def load_data_from_csv(self, file_path: str, **read_csv_kwargs) -> pd.DataFrame:
+        """
+        Загрузить датасет из CSV-файла.
+        file_path — путь к файлу;
+        read_csv_kwargs — дополнительные аргументы pd.read_csv.
+        """
+        try:
+            logger.info(f"Загрузка данных из CSV: {file_path}")
+            df = pd.read_csv(file_path, **read_csv_kwargs)
+            logger.info(f"Загружено {len(df)} строк из CSV")
+            return df
+        except Exception as e:
+            logger.exception("Ошибка при загрузке данных из CSV")
             raise
 
     def save_data(self, df, table_name, schema='synthetic_data_schema', process_id=None):

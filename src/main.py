@@ -1,4 +1,6 @@
 import configparser
+from importlib.util import source_hash
+
 from data_manager import DataManager
 from generator import generate_synthetic_data
 from processor import DataProcessor
@@ -42,6 +44,7 @@ def main():
 
     # SQL-запрос из конфига
     raw_data_query = config['QUERIES']['raw_data_query']
+    raw_data_file = config['PATHS'].get('raw_data_file', '').strip()
 
     # генерируем идент процесса
     process_id = str(uuid.uuid4())
@@ -49,15 +52,19 @@ def main():
 
     logger.info("Подключение и загрузка данных из БД")
     dm = DataManager()
-    dm.test_connection()
-
-    source_info = raw_data_query  # источник данных
-    config_rout = config.get('PATHS', 'config_rout', fallback='config.ini')  # путь конфига
-    dm.create_process(process_id, start_ts, 'RUNNING', source_info, config_rout)
 
     # получаем оригинальный датасет
-    original_df = dm.load_data(raw_data_query)
+    if raw_data_file:
+        original_df = dm.load_data_from_csv(raw_data_file)
+        source_info = raw_data_file
+    else:
+        dm.test_connection()
+        source_info = raw_data_query  # источник данных
+        original_df = dm.load_data_from_db(raw_data_query)
     logger.info(f"Загружено {len(original_df)} записей")
+
+    config_rout = config.get('PATHS', 'config_rout', fallback='config.ini')  # путь конфига
+    dm.create_process(process_id, start_ts, 'RUNNING', source_info, config_rout)
 
     processor = DataProcessor(original_df)
     processed_df = processor.preprocess()
