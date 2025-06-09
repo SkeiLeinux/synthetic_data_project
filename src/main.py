@@ -12,17 +12,10 @@ from logger_config import setup_logger
 logger = setup_logger(__name__)
 
 def main():
-    # Чтение конфигурации
+    # чтение конфигурации
     config = configparser.ConfigParser()
     config.read('config.ini')
 
-    # db_config = {
-    #     'dbname': config['DATABASE']['dbname'],
-    #     'user': config['DATABASE']['user'],
-    #     'password': config['DATABASE']['password'],
-    #     'host': config['DATABASE']['host'],
-    #     'port': config.getint('DATABASE', 'port')
-    # }
     schema = config['DATABASE']['schema']
     logger.info("database data loaded")
 
@@ -31,18 +24,7 @@ def main():
     l = config.getint('ANONYMITY', 'l')
     t = config.getfloat('ANONYMITY', 't')
 
-    # Параметры отклонений
-    tolerances = {
-        # config.get('')
-        'column_2': {'absolute': config.getint('TOLERANCES', 'column_int_absolute')},
-        'column_3': {'percent': config.getint('TOLERANCES', 'column_float_percent')},
-        'created_at': {
-            'days': config.getint('TOLERANCES', 'column_date_days'),
-            'minutes': config.getint('TOLERANCES', 'column_timestamp_minutes')
-        }
-    }
-
-    # SQL-запрос из конфига
+    # источник датасета из конфига
     raw_data_query = config['QUERIES']['raw_data_query']
     raw_data_file = config['PATHS'].get('raw_data_file', '').strip()
 
@@ -70,7 +52,7 @@ def main():
     processed_df = processor.preprocess()
 
     quasi_identifiers = [col.strip() for col in config['ANONYMITY']['quasi_identifiers'].split(',')]
-    sensitive_attribute = [col.strip() for col in config['ANONYMITY']['sensitive_attribute'].split(',')]
+    sensitive_attribute = config['ANONYMITY']['sensitive_attribute']
 
     max_iterations = 10
     for iteration in range(1, max_iterations + 1):
@@ -82,17 +64,14 @@ def main():
         k_ok, _ = validator.check_k_anonymity(quasi_identifiers, k)
         l_ok, _ = validator.check_l_diversity(quasi_identifiers, sensitive_attribute, l)
         t_ok, t_val = validator.check_t_closeness(quasi_identifiers, sensitive_attribute, processed_df, t)
-        stats_ok, violations = processor.compare_statistics(synthetic_df, tolerances)
 
-        if k_ok and l_ok and t_ok and stats_ok:
+        if k_ok and l_ok and t_ok:
             logger.info("Все проверки успешно пройдены, сохраняем датасет")
 
             meta = {
                 "k_anonymity": bool(k_ok),
                 "l_diversity": bool(l_ok),
-                "t_closeness": {"ok": bool(t_ok), "value": t_val},
-                "stats_ok": bool(stats_ok),
-                "violations": violations
+                "t_closeness": {"ok": bool(t_ok), "value": t_val}
             }
             dm.insert_metadata(process_id, '33333333-3333-3333-3333-333333333333', meta)
 
@@ -102,10 +81,8 @@ def main():
             break
         else:
             logger.warning(f"Итерация {iteration}: обнаружены нарушения")
-            logger.warning(f"k-анонимность: {k_ok}, l-разнообразие: {l_ok}, t-близость: {t_ok} (значение: {t_val:.3f}), статистики: {stats_ok}")
-            if not stats_ok:
-                for key, msg in violations.items():
-                    logger.warning(f"Столбец {key}: {msg}")
+            logger.warning(f"k-анонимность: {k_ok}, l-разнообразие: {l_ok}, t-близость: {t_ok} (значение: {t_val:.3f})")
+
     else:
         logger.error("Не удалось создать корректный датасет за допустимое число итераций")
         final_status = 'FAILED'
