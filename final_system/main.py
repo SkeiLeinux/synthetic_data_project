@@ -1,4 +1,5 @@
 import configparser
+from email.contentmanager import raw_data_manager
 from importlib.util import source_hash
 
 from data_manager import DataManager
@@ -25,7 +26,8 @@ def main():
     t = config.getfloat('ANONYMITY', 't')
 
     # источник датасета из конфига
-    raw_data_query = config['QUERIES']['raw_data_query']
+    # raw_data_query = config['QUERIES']['raw_data_query']
+    raw_data_query = None
     raw_data_file = config['PATHS'].get('raw_data_file', '').strip()
 
     # генерируем идент процесса

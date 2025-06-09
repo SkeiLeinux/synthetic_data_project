@@ -17,7 +17,7 @@ def generate_synthetic_data(df, model_name: str = "copulagan", epochs: int = 300
     }
 
     SynthClass = generators.get(model_name.lower(), CopulaGANSynthesizer)
-    model = SynthClass(metadata, epochs=epochs, batch_size=batch_size, verbose=False, cuda=cuda)
+    model = SynthClass(metadata, epochs=epochs, batch_size=batch_size, verbose=True, cuda=cuda)
     model.fit(df)
 
     synthetic_df = model.sample(num_rows=len(df)).drop(columns=['id'])
