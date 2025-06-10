@@ -31,11 +31,11 @@ class DataProcessor:
             else:
                 self.df[column].fillna(self.df[column].mode()[0], inplace=True)
 
-        self._generalize_qi()
+        self.generalize_qi()
 
         return self.df
 
-    def _generalize_qi(self):
+    def generalize_qi(self):
         """Generalize quasi-identifiers used in the neural network training."""
         df = self.df
         if 'age' in df.columns:

@@ -61,3 +61,616 @@
 [2025-06-09 22:46:55] [WARNING] __main__: Итерация 3: обнаружены нарушения
 [2025-06-09 22:46:55] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.567)
 [2025-06-09 22:46:55] [INFO] __main__: Итерация генерации №4
+[2025-06-09 22:51:25] [WARNING] __main__: Итерация 4: обнаружены нарушения
+[2025-06-09 22:51:25] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.831)
+[2025-06-09 22:51:25] [INFO] __main__: Итерация генерации №5
+[2025-06-09 22:56:36] [WARNING] __main__: Итерация 5: обнаружены нарушения
+[2025-06-09 22:56:36] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.541)
+[2025-06-09 22:56:36] [INFO] __main__: Итерация генерации №6
+[2025-06-09 22:59:19] [WARNING] __main__: Итерация 6: обнаружены нарушения
+[2025-06-09 22:59:19] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.467)
+[2025-06-09 22:59:19] [INFO] __main__: Итерация генерации №7
+[2025-06-09 23:02:25] [WARNING] __main__: Итерация 7: обнаружены нарушения
+[2025-06-09 23:02:25] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.535)
+[2025-06-09 23:02:25] [INFO] __main__: Итерация генерации №8
+[2025-06-09 23:07:17] [WARNING] __main__: Итерация 8: обнаружены нарушения
+[2025-06-09 23:07:17] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.486)
+[2025-06-09 23:07:17] [INFO] __main__: Итерация генерации №9
+[2025-06-09 23:12:16] [WARNING] __main__: Итерация 9: обнаружены нарушения
+[2025-06-09 23:12:16] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.765)
+[2025-06-09 23:12:16] [INFO] __main__: Итерация генерации №10
+[2025-06-09 23:17:26] [WARNING] __main__: Итерация 10: обнаружены нарушения
+[2025-06-09 23:17:26] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.710)
+[2025-06-09 23:17:26] [ERROR] __main__: Не удалось создать корректный датасет за допустимое число итераций
+[2025-06-09 23:17:26] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-09 23:17:26] [INFO] __main__: Завершение работы программы
+[2025-06-09 23:58:42] [INFO] __main__: database data loaded
+[2025-06-09 23:58:42] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-09 23:58:42] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-09 23:58:42] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-09 23:58:42] [INFO] __main__: Загружено 32561 записей
+[2025-06-09 23:58:42] [INFO] __main__: Итерация генерации №1
+[2025-06-10 00:01:56] [WARNING] __main__: Итерация 1: обнаружены нарушения
+[2025-06-10 00:01:56] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.452)
+[2025-06-10 00:01:56] [INFO] __main__: Итерация генерации №2
+[2025-06-10 00:05:43] [WARNING] __main__: Итерация 2: обнаружены нарушения
+[2025-06-10 00:05:43] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.617)
+[2025-06-10 00:05:43] [INFO] __main__: Итерация генерации №3
+[2025-06-10 00:08:14] [WARNING] __main__: Итерация 3: обнаружены нарушения
+[2025-06-10 00:08:14] [WARNING] __main__: k-анонимность: True, l-разнообразие: True, t-близость: False (значение: 0.739)
+[2025-06-10 00:08:14] [INFO] __main__: Итерация генерации №4
+[2025-06-10 00:37:32] [INFO] __main__: database data loaded
+[2025-06-10 00:37:32] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 00:37:32] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 00:37:32] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 00:37:32] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 00:37:32] [INFO] __main__: Итерация генерации №1
+[2025-06-10 00:41:33] [INFO] validator: k‑анонимность = 35 (≥1?)
+[2025-06-10 00:41:33] [INFO] validator: l‑разнообразие = 11 (≥1?)
+[2025-06-10 00:41:33] [INFO] validator: t‑близость = 0.6803 (<0.2?)
+[2025-06-10 00:41:33] [WARNING] __main__: Итерация 1: обнаружены нарушения
+[2025-06-10 00:41:33] [WARNING] __main__: k-анонимность: 35, l-разнообразие: 11, t-близость: 0.6803294043044802
+[2025-06-10 00:41:33] [INFO] __main__: Итерация генерации №2
+[2025-06-10 01:01:22] [INFO] data_manager: Подключение к базе данных успешно!
+[2025-06-10 01:13:50] [INFO] __main__: database data loaded
+[2025-06-10 01:13:50] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:13:50] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:13:50] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:13:50] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:13:50] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:15:03] [INFO] __main__: database data loaded
+[2025-06-10 01:15:03] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:15:03] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:15:03] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:15:03] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:15:03] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:15:32] [INFO] __main__: database data loaded
+[2025-06-10 01:15:32] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:15:32] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:15:32] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:15:32] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:15:32] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:16:57] [INFO] __main__: database data loaded
+[2025-06-10 01:16:57] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:16:57] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:16:57] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:16:57] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:16:57] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:17:22] [INFO] __main__: database data loaded
+[2025-06-10 01:17:22] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:17:22] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:17:22] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:17:22] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:17:22] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:26:25] [INFO] __main__: database data loaded
+[2025-06-10 01:26:25] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:26:25] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:26:25] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:26:25] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:26:25] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:26:44] [INFO] __main__: database data loaded
+[2025-06-10 01:26:44] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:26:44] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:26:44] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:26:44] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:26:44] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:31:21] [INFO] validator: k‑анонимность = 35 (≥10?)
+[2025-06-10 01:31:21] [INFO] validator: l‑разнообразие = 11 (≥3?)
+[2025-06-10 01:31:21] [INFO] validator: t‑близость = 0.4130 (<0.9?)
+[2025-06-10 01:31:21] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 01:41:08] [INFO] __main__: database data loaded
+[2025-06-10 01:41:08] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:41:08] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:41:08] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:41:08] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:41:08] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:42:51] [INFO] validator: k‑анонимность = 64 (≥10?)
+[2025-06-10 01:42:51] [INFO] validator: l‑разнообразие = 12 (≥3?)
+[2025-06-10 01:42:51] [INFO] validator: t‑близость = 0.4306 (<0.9?)
+[2025-06-10 01:42:51] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 01:42:51] [INFO] __main__: Завершение работы программы
+[2025-06-10 01:46:33] [INFO] __main__: database data loaded
+[2025-06-10 01:46:33] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:46:33] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:46:33] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:46:33] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:46:33] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:49:07] [INFO] validator: k‑анонимность = 35 (≥10?)
+[2025-06-10 01:49:07] [INFO] validator: l‑разнообразие = 10 (≥3?)
+[2025-06-10 01:49:07] [INFO] validator: t‑близость = 0.4079 (<0.9?)
+[2025-06-10 01:49:07] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 01:53:39] [INFO] __main__: database data loaded
+[2025-06-10 01:53:39] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 01:53:39] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 01:53:39] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 01:53:39] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 01:53:39] [INFO] __main__: Итерация генерации №1
+[2025-06-10 01:55:23] [INFO] validator: k‑анонимность = 56 (≥10?)
+[2025-06-10 01:55:23] [INFO] validator: l‑разнообразие = 12 (≥3?)
+[2025-06-10 01:55:23] [INFO] validator: t‑близость = 0.3895 (<0.9?)
+[2025-06-10 01:55:23] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 01:55:25] [INFO] validator: 
+=== Общая оценка качества синтетики: 87.38% ===
+[2025-06-10 01:55:25] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 01:55:25] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.963284
+1        workclass  TVComplement  0.966563
+2           fnlwgt  KSComplement  0.947666
+3        education  TVComplement  0.957140
+4    education-num  KSComplement  0.968257
+5   marital-status  TVComplement  0.953650
+6       occupation  TVComplement  0.927837
+7     relationship  TVComplement  0.948526
+8             race  TVComplement  0.967420
+9              sex  TVComplement  0.963748
+10    capital-gain  KSComplement  0.443450
+11    capital-loss  KSComplement  0.734495
+12  hours-per-week  KSComplement  0.944807
+13  native-country  TVComplement  0.907647
+14          income  TVComplement  0.971111
+15         age_bin  TVComplement  0.981628
+16         edu_bin  TVComplement  0.983104
+17     marital_bin  TVComplement  0.969092
+18        race_bin  TVComplement  1.000000
+[2025-06-10 01:55:25] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 01:55:25] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.885685               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.996933         -0.076447              -0.070313
+2            age       education  ContingencySimilarity  0.868291               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.945886          0.036224               0.144452
+4            age  marital-status  ContingencySimilarity  0.847031               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.937611               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.981628               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.887858               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.983104               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.969092               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 01:55:25] [INFO] __main__: Завершение работы программы
+[2025-06-10 02:04:36] [INFO] data_manager: Подключение к базе данных успешно!
+[2025-06-10 02:06:14] [INFO] __main__: database data loaded
+[2025-06-10 02:06:14] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:06:14] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:06:14] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:06:14] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:06:14] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:10:15] [INFO] validator: k‑анонимность = 50 (≥10?)
+[2025-06-10 02:10:15] [INFO] validator: l‑разнообразие = 11 (≥3?)
+[2025-06-10 02:10:15] [INFO] validator: t‑близость = 0.4261 (<0.9?)
+[2025-06-10 02:10:15] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 02:18:37] [INFO] __main__: database data loaded
+[2025-06-10 02:18:37] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:18:37] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:18:37] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:18:37] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:19:40] [INFO] __main__: database data loaded
+[2025-06-10 02:19:40] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:19:40] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:19:40] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:19:40] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:19:40] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:21:47] [INFO] validator: k‑анонимность = 26 (≥10?)
+[2025-06-10 02:21:47] [INFO] validator: l‑разнообразие = 8 (≥3?)
+[2025-06-10 02:21:47] [INFO] validator: t‑близость = 0.4791 (<0.9?)
+[2025-06-10 02:21:47] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 02:21:48] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 02:21:49] [INFO] validator: 
+=== Общая оценка качества синтетики: 86.27% ===
+[2025-06-10 02:21:49] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 02:21:49] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.950161
+1        workclass  TVComplement  0.886627
+2           fnlwgt  KSComplement  0.948723
+3        education  TVComplement  0.884441
+4    education-num  KSComplement  0.953386
+5   marital-status  TVComplement  0.959935
+6       occupation  TVComplement  0.875506
+7     relationship  TVComplement  0.919421
+8             race  TVComplement  0.910773
+9              sex  TVComplement  0.994752
+10    capital-gain  KSComplement  0.414367
+11    capital-loss  KSComplement  0.451503
+12  hours-per-week  KSComplement  0.926596
+13  native-country  TVComplement  0.925550
+14          income  TVComplement  0.965191
+15         age_bin  TVComplement  0.958132
+16         edu_bin  TVComplement  0.987314
+17     marital_bin  TVComplement  0.994334
+18        race_bin  TVComplement  1.000000
+[2025-06-10 02:21:49] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 02:21:49] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.843619               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.971402         -0.076447              -0.019252
+2            age       education  ContingencySimilarity  0.845201               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.979125          0.036224               0.077974
+4            age  marital-status  ContingencySimilarity  0.865177               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.956871               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.958132               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.971611               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.987314               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.994334               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 02:21:49] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-10 02:21:49] [INFO] __main__: Завершение работы программы
+[2025-06-10 02:30:30] [INFO] __main__: database data loaded
+[2025-06-10 02:30:30] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:30:30] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:30:30] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:30:30] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:30:31] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:31:07] [INFO] __main__: database data loaded
+[2025-06-10 02:31:07] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:31:08] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:31:08] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:31:08] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:31:08] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:32:48] [INFO] validator: k‑анонимность = 43 (≥10?)
+[2025-06-10 02:32:48] [INFO] validator: l‑разнообразие = 12 (≥3?)
+[2025-06-10 02:32:48] [INFO] validator: t‑близость = 0.3774 (<0.9?)
+[2025-06-10 02:32:48] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 02:32:49] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 02:32:51] [INFO] validator: 
+=== Общая оценка качества синтетики: 88.78% ===
+[2025-06-10 02:32:51] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 02:32:51] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.949672
+1        workclass  TVComplement  0.966198
+2           fnlwgt  KSComplement  0.929450
+3        education  TVComplement  0.901083
+4    education-num  KSComplement  0.934484
+5   marital-status  TVComplement  0.973294
+6       occupation  TVComplement  0.895350
+7     relationship  TVComplement  0.935806
+8             race  TVComplement  0.976390
+9              sex  TVComplement  0.995874
+10    capital-gain  KSComplement  0.752835
+11    capital-loss  KSComplement  0.500717
+12  hours-per-week  KSComplement  0.913153
+13  native-country  TVComplement  0.893393
+14          income  TVComplement  0.989087
+15         age_bin  TVComplement  0.993461
+16         edu_bin  TVComplement  0.977149
+17     marital_bin  TVComplement  0.992182
+18        race_bin  TVComplement  1.000000
+[2025-06-10 02:32:51] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 02:32:51] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.913947               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.976356         -0.076447              -0.029159
+2            age       education  ContingencySimilarity  0.841330               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.973632          0.036224               0.088960
+4            age  marital-status  ContingencySimilarity  0.856070               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.968666               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.993461               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.971297               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.977149               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.992182               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 02:32:51] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-10 02:32:51] [INFO] __main__: Завершение работы программы
+[2025-06-10 02:34:19] [INFO] __main__: database data loaded
+[2025-06-10 02:34:19] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:34:19] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:34:19] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:34:19] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:34:19] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:36:02] [INFO] validator: k‑анонимность = 35 (≥10?)
+[2025-06-10 02:36:02] [INFO] validator: l‑разнообразие = 10 (≥3?)
+[2025-06-10 02:36:02] [INFO] validator: t‑близость = 0.3960 (<0.9?)
+[2025-06-10 02:36:02] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 02:36:03] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 02:36:04] [INFO] validator: 
+=== Общая оценка качества синтетики: 86.53% ===
+[2025-06-10 02:36:04] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 02:36:04] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.940586
+1        workclass  TVComplement  0.830920
+2           fnlwgt  KSComplement  0.901835
+3        education  TVComplement  0.884449
+4    education-num  KSComplement  0.952145
+5   marital-status  TVComplement  0.970308
+6       occupation  TVComplement  0.904251
+7     relationship  TVComplement  0.929970
+8             race  TVComplement  0.941278
+9              sex  TVComplement  0.996635
+10    capital-gain  KSComplement  0.796786
+11    capital-loss  KSComplement  0.772683
+12  hours-per-week  KSComplement  0.922636
+13  native-country  TVComplement  0.864695
+14          income  TVComplement  0.976836
+15         age_bin  TVComplement  0.979361
+16         edu_bin  TVComplement  0.985470
+17     marital_bin  TVComplement  0.993335
+18        race_bin  TVComplement  1.000000
+[2025-06-10 02:36:04] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 02:36:04] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.798286               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.964541         -0.076447              -0.005530
+2            age       education  ContingencySimilarity  0.831818               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.978662          0.036224               0.078901
+4            age  marital-status  ContingencySimilarity  0.860395               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.963941               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.979361               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.938264               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.985470               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.993335               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 02:36:04] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-10 02:36:04] [INFO] __main__: Завершение работы программы
+[2025-06-10 02:39:17] [INFO] __main__: database data loaded
+[2025-06-10 02:39:17] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:39:17] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:39:17] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:39:17] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:39:17] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:40:57] [INFO] validator: k‑анонимность = 61 (≥10?)
+[2025-06-10 02:40:57] [INFO] validator: l‑разнообразие = 11 (≥3?)
+[2025-06-10 02:40:57] [INFO] validator: t‑близость = 0.4540 (<0.9?)
+[2025-06-10 02:40:57] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 02:40:58] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 02:40:59] [INFO] validator: 
+=== Общая оценка качества синтетики: 88.26% ===
+[2025-06-10 02:40:59] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 02:40:59] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.926906
+1        workclass  TVComplement  0.984083
+2           fnlwgt  KSComplement  0.958849
+3        education  TVComplement  0.930222
+4    education-num  KSComplement  0.949044
+5   marital-status  TVComplement  0.948745
+6       occupation  TVComplement  0.881327
+7     relationship  TVComplement  0.936824
+8             race  TVComplement  0.889105
+9              sex  TVComplement  0.910193
+10    capital-gain  KSComplement  0.476528
+11    capital-loss  KSComplement  0.499027
+12  hours-per-week  KSComplement  0.909813
+13  native-country  TVComplement  0.891011
+14          income  TVComplement  0.947326
+15         age_bin  TVComplement  0.970679
+16         edu_bin  TVComplement  0.981474
+17     marital_bin  TVComplement  0.974970
+18        race_bin  TVComplement  1.000000
+[2025-06-10 02:40:59] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 02:40:59] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.883570               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.969425         -0.076447              -0.015298
+2            age       education  ContingencySimilarity  0.864012               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.995922          0.036224               0.044381
+4            age  marital-status  ContingencySimilarity  0.848125               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.948965               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.970679               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.920092               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.981474               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.974970               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 02:40:59] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-10 02:40:59] [INFO] __main__: Завершение работы программы
+[2025-06-10 02:47:45] [INFO] __main__: database data loaded
+[2025-06-10 02:47:45] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:47:45] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:47:45] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:47:45] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:47:45] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:49:27] [INFO] validator: k‑анонимность = 43 (≥10?)
+[2025-06-10 02:49:27] [INFO] validator: l‑разнообразие = 10 (≥3?)
+[2025-06-10 02:49:27] [INFO] validator: t‑близость = 0.4509 (<0.9?)
+[2025-06-10 02:49:27] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 02:49:28] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 02:49:29] [INFO] validator: 
+=== Общая оценка качества синтетики: 88.61% ===
+[2025-06-10 02:49:29] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 02:49:29] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.934907
+1        workclass  TVComplement  0.900996
+2           fnlwgt  KSComplement  0.937143
+3        education  TVComplement  0.935620
+4    education-num  KSComplement  0.946920
+5   marital-status  TVComplement  0.940841
+6       occupation  TVComplement  0.910674
+7     relationship  TVComplement  0.951547
+8             race  TVComplement  0.951246
+9              sex  TVComplement  0.975888
+10    capital-gain  KSComplement  0.368034
+11    capital-loss  KSComplement  0.507517
+12  hours-per-week  KSComplement  0.905577
+13  native-country  TVComplement  0.938736
+14          income  TVComplement  0.959240
+15         age_bin  TVComplement  0.977255
+16         edu_bin  TVComplement  0.988867
+17     marital_bin  TVComplement  0.998176
+18        race_bin  TVComplement  1.000000
+[2025-06-10 02:49:29] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 02:49:29] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.854240               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.968963         -0.076447              -0.014373
+2            age       education  ContingencySimilarity  0.856826               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.976324          0.036224               0.083577
+4            age  marital-status  ContingencySimilarity  0.827557               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.955827               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.977255               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.914982               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.988867               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.998176               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 02:49:29] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-10 02:49:29] [INFO] __main__: Завершение работы программы
+[2025-06-10 02:55:33] [INFO] __main__: database data loaded
+[2025-06-10 02:55:33] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 02:55:33] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 02:55:33] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 02:55:33] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 02:55:33] [INFO] __main__: Итерация генерации №1
+[2025-06-10 02:57:16] [INFO] validator: k‑анонимность = 42 (≥10?)
+[2025-06-10 02:57:16] [INFO] validator: l‑разнообразие = 9 (≥3?)
+[2025-06-10 02:57:16] [INFO] validator: t‑близость = 0.4141 (<0.9?)
+[2025-06-10 02:57:16] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 02:57:17] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 02:57:18] [INFO] validator: 
+=== Общая оценка качества синтетики: 87.86% ===
+[2025-06-10 02:57:18] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 02:57:18] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.927580
+1        workclass  TVComplement  0.933805
+2           fnlwgt  KSComplement  0.937887
+3        education  TVComplement  0.914983
+4    education-num  KSComplement  0.970853
+5   marital-status  TVComplement  0.944326
+6       occupation  TVComplement  0.911503
+7     relationship  TVComplement  0.890322
+8             race  TVComplement  0.853107
+9              sex  TVComplement  0.912344
+10    capital-gain  KSComplement  0.255928
+11    capital-loss  KSComplement  0.735225
+12  hours-per-week  KSComplement  0.919684
+13  native-country  TVComplement  0.915254
+14          income  TVComplement  0.985437
+15         age_bin  TVComplement  0.987330
+16         edu_bin  TVComplement  0.995267
+17     marital_bin  TVComplement  0.994526
+18        race_bin  TVComplement  1.000000
+[2025-06-10 02:57:18] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 02:57:18] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.841328               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.959349         -0.076447               0.004854
+2            age       education  ContingencySimilarity  0.820023               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.967415          0.036224               0.101395
+4            age  marital-status  ContingencySimilarity  0.828908               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.982727               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.987330               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.921897               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.995267               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.994526               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 02:57:18] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-10 02:57:18] [INFO] __main__: Завершение работы программы
+[2025-06-10 03:01:48] [INFO] __main__: database data loaded
+[2025-06-10 03:01:48] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 03:01:48] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 03:01:48] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 03:01:48] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 03:01:48] [INFO] __main__: Итерация генерации №1
+[2025-06-10 03:03:29] [INFO] validator: k‑анонимность = 42 (≥10?)
+[2025-06-10 03:03:29] [INFO] validator: l‑разнообразие = 10 (≥3?)
+[2025-06-10 03:03:29] [INFO] validator: t‑близость = 0.4357 (<0.9?)
+[2025-06-10 03:03:29] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 03:03:30] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 03:03:31] [INFO] validator: 
+=== Общая оценка качества синтетики: 87.57% ===
+[2025-06-10 03:03:31] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 03:03:31] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.922307
+1        workclass  TVComplement  0.867187
+2           fnlwgt  KSComplement  0.926740
+3        education  TVComplement  0.944628
+4    education-num  KSComplement  0.946689
+5   marital-status  TVComplement  0.962279
+6       occupation  TVComplement  0.910336
+7     relationship  TVComplement  0.918652
+8             race  TVComplement  0.971934
+9              sex  TVComplement  0.970510
+10    capital-gain  KSComplement  0.411639
+11    capital-loss  KSComplement  0.604986
+12  hours-per-week  KSComplement  0.911962
+13  native-country  TVComplement  0.935663
+14          income  TVComplement  0.978334
+15         age_bin  TVComplement  0.957845
+16         edu_bin  TVComplement  0.990195
+17     marital_bin  TVComplement  0.997484
+18        race_bin  TVComplement  1.000000
+[2025-06-10 03:03:31] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 03:03:32] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.819430               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.975359         -0.076447              -0.027166
+2            age       education  ContingencySimilarity  0.851180               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.985304          0.036224               0.065615
+4            age  marital-status  ContingencySimilarity  0.849745               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.955535               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.957845               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.929005               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.990195               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.997484               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 03:04:10] [INFO] __main__: database data loaded
+[2025-06-10 03:04:10] [INFO] __main__: Подключение и загрузка данных из БД
+[2025-06-10 03:04:10] [INFO] data_manager: Загрузка данных из CSV: adult.csv
+[2025-06-10 03:04:10] [INFO] data_manager: Загружено 32561 строк из CSV
+[2025-06-10 03:04:10] [INFO] __main__: Загружено 32561 записей
+[2025-06-10 03:04:10] [INFO] __main__: Итерация генерации №1
+[2025-06-10 03:05:54] [INFO] validator: k‑анонимность = 40 (≥10?)
+[2025-06-10 03:05:54] [INFO] validator: l‑разнообразие = 10 (≥3?)
+[2025-06-10 03:05:54] [INFO] validator: t‑близость = 0.4167 (<0.9?)
+[2025-06-10 03:05:54] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
+[2025-06-10 03:05:55] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
+[2025-06-10 03:05:56] [INFO] validator: 
+=== Общая оценка качества синтетики: 88.56% ===
+[2025-06-10 03:05:56] [INFO] validator: 
+— Column Shapes —
+[2025-06-10 03:05:56] [INFO] validator:             Column        Metric     Score
+0              age  KSComplement  0.962694
+1        workclass  TVComplement  0.871068
+2           fnlwgt  KSComplement  0.924375
+3        education  TVComplement  0.901964
+4    education-num  KSComplement  0.944636
+5   marital-status  TVComplement  0.939102
+6       occupation  TVComplement  0.913308
+7     relationship  TVComplement  0.931751
+8             race  TVComplement  0.966383
+9              sex  TVComplement  0.955796
+10    capital-gain  KSComplement  0.234414
+11    capital-loss  KSComplement  0.839801
+12  hours-per-week  KSComplement  0.900475
+13  native-country  TVComplement  0.929084
+14          income  TVComplement  0.947023
+15         age_bin  TVComplement  0.982875
+16         edu_bin  TVComplement  0.981666
+17     marital_bin  TVComplement  0.981617
+18        race_bin  TVComplement  1.000000
+[2025-06-10 03:05:56] [INFO] validator: 
+— Column Pair Trends —
+[2025-06-10 03:05:56] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
+0            age       workclass  ContingencySimilarity  0.825026               NaN                    NaN
+1            age          fnlwgt  CorrelationSimilarity  0.968836         -0.076447              -0.014119
+2            age       education  ContingencySimilarity  0.848992               NaN                    NaN
+3            age   education-num  CorrelationSimilarity  0.963515          0.036224               0.109195
+4            age  marital-status  ContingencySimilarity  0.842808               NaN                    NaN
+..           ...             ...                    ...       ...               ...                    ...
+166      age_bin     marital_bin  ContingencySimilarity  0.972161               NaN                    NaN
+167      age_bin        race_bin  ContingencySimilarity  0.982875               NaN                    NaN
+168      edu_bin     marital_bin  ContingencySimilarity  0.926200               NaN                    NaN
+169      edu_bin        race_bin  ContingencySimilarity  0.981666               NaN                    NaN
+170  marital_bin        race_bin  ContingencySimilarity  0.981617               NaN                    NaN
+
+[171 rows x 6 columns]
+[2025-06-10 03:05:56] [INFO] data_manager: Соединение с базой данных закрыто
+[2025-06-10 03:05:56] [INFO] __main__: Завершение работы программы

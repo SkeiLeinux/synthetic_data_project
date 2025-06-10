@@ -80,7 +80,8 @@ class DataManager:
             (process_id, start_time, status, source_data_info, config_rout)
             VALUES (:pid, :start_ts, :status, :src_info, :cfg);
         """)
-        with self.engine.connect() as conn:
+        print("создаем процесс")
+        with self.engine.begin() as conn:
             conn.execute(sql, {
                 'pid': process_id,
                 'start_ts': start_time,
@@ -88,6 +89,7 @@ class DataManager:
                 'src_info': source_data_info,
                 'cfg': config_rout
             })
+        print("параметры заполнили")
 
     def update_process_end(self, process_id: str, end_time: datetime, status: str,
                            synthetic_data_location: str = None, report_location: str = None):
@@ -99,7 +101,7 @@ class DataManager:
                 report_location = :rep_loc
             WHERE process_id = :pid;
         """)
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:
             conn.execute(sql, {
                 'end_ts': end_time,
                 'status': status,
@@ -108,23 +110,26 @@ class DataManager:
                 'pid': process_id
             })
 
-    def insert_log(self, process_id: str, log_id: str, log_file_content: bytes, log_rout: str = None):
-        sql = text("""
-            INSERT INTO synthetic_data_schema.process_logs
-            (log_id, log_rout, log_file_content, created_at)
-            VALUES (:lid, :rout, :content, NOW());
-
-            UPDATE synthetic_data_schema.processes
-            SET log_id = :lid
-            WHERE  process_id = :pid;
-        """)
-        with self.engine.connect() as conn:
-            conn.execute(sql, {
+    def insert_log(self, process_id: str, log_id: str, log_file_content: bytes):
+        with self.engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO synthetic_data_schema.process_logs
+                (log_id, log_content, created_at)
+                VALUES (:lid, :log_content, NOW())
+            """), {
                 'lid': log_id,
-                'rout': log_rout,
-                'content': log_file_content,
+                'log_content': log_file_content.decode('utf-8'),
+            })
+
+            conn.execute(text("""
+                UPDATE synthetic_data_schema.processes
+                SET log_id = :lid
+                WHERE process_id = :pid
+            """), {
+                'lid': log_id,
                 'pid': process_id
             })
+
 
     def insert_metadata(self, process_id: str, metadata_type_id: str, metadata_value: dict):
         sql = text("""
@@ -132,7 +137,7 @@ class DataManager:
             (process_id, metadata_type_id, metadata_value, created_at)
             VALUES (:pid, :mtid, :mval, NOW());
         """)
-        with self.engine.connect() as conn:
+        with self.engine.begin() as conn:
             conn.execute(sql, {
                 'pid': process_id,
                 'mtid': metadata_type_id,

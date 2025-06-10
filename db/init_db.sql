@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS process_metadata (
     process_id UUID NOT NULL,
     metadata_type_id UUID NOT NULL,
     metadata_value JSONB NOT NULL,
+    created_at TIMESTAMP NOT NULL,
     FOREIGN KEY (process_id) REFERENCES processes(process_id) ON DELETE CASCADE,
     FOREIGN KEY (metadata_type_id) REFERENCES metadata_types(metadata_type_id) ON DELETE CASCADE
 );

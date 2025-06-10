@@ -1,0 +1,71 @@
+{
+    "tables": {
+        "adult": {
+            "columns": {
+                "age": {
+                    "sdtype": "numerical"
+                },
+                "workclass": {
+                    "sdtype": "categorical"
+                },
+                "fnlwgt": {
+                    "sdtype": "numerical"
+                },
+                "education": {
+                    "sdtype": "categorical"
+                },
+                "education-num": {
+                    "sdtype": "numerical"
+                },
+                "marital-status": {
+                    "sdtype": "categorical"
+                },
+                "occupation": {
+                    "sdtype": "categorical"
+                },
+                "relationship": {
+                    "sdtype": "categorical"
+                },
+                "race": {
+                    "sdtype": "categorical"
+                },
+                "sex": {
+                    "sdtype": "categorical"
+                },
+                "capital-gain": {
+                    "sdtype": "numerical"
+                },
+                "capital-loss": {
+                    "sdtype": "numerical"
+                },
+                "hours-per-week": {
+                    "sdtype": "numerical"
+                },
+                "native-country": {
+                    "sdtype": "categorical"
+                },
+                "income": {
+                    "sdtype": "categorical"
+                },
+                "age_bin": {
+                    "sdtype": "categorical"
+                },
+                "edu_bin": {
+                    "sdtype": "categorical"
+                },
+                "marital_bin": {
+                    "sdtype": "categorical"
+                },
+                "race_bin": {
+                    "sdtype": "categorical"
+                },
+                "id": {
+                    "sdtype": "id"
+                }
+            },
+            "primary_key": "id"
+        }
+    },
+    "relationships": [],
+    "METADATA_SPEC_VERSION": "V1"
+}
