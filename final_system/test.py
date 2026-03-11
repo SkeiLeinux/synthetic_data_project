@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 # Библиотека SmartNoise Synth
+import snsynth
 from snsynth import Synthesizer
 
 
