@@ -26,7 +26,7 @@ def generate_synthetic_data(df, sensitive, model_name: str = "ctgan", epochs: in
 
     metadata = Metadata.detect_from_dataframe(data=train_df, table_name='adult')
     metadata.set_primary_key(table_name='adult', column_name='id')
-    metadata.save_to_json(filepath='metadata.json', mode = 'overwrite')
+    metadata.save_to_json(filepath='../metadata.json', mode ='overwrite')
 
     generators = {
         "ctgan": CTGANSynthesizer,

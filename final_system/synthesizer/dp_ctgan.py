@@ -626,7 +626,7 @@ if __name__ == "__main__":
 
     # Тест сериализации
     print("[6] Сохранение / загрузка...")
-    save_path = "dp_ctgan_model.pkl"
+    save_path = "../dp_ctgan_model.pkl"
     generator.save(save_path)
     loaded = DPCTGANGenerator.load(save_path)
     print("    Генерация из загруженной модели:")
