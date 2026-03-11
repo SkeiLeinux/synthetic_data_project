@@ -26,10 +26,59 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+import sys
 import pandas as pd
 from snsynth import Synthesizer
 
 logger = logging.getLogger(__name__)
+
+class _ProgressTeeStream:
+    """
+    Перехватывает stdout SmartNoise, парсит строки эпох и
+    отображает tqdm-прогресс бар с текущим spent epsilon.
+    Буфер заполняется параллельно — для парсера epsilon после обучения.
+    """
+    def __init__(self, buffer: io.StringIO, total_epochs: int):
+        from tqdm import tqdm
+        self._buffer = buffer
+        self._line_buf = ""
+        self._last_epoch = 0
+        self._epoch_pattern = re.compile(r"Epoch (\d+),")
+        self._eps_pattern = re.compile(r"epsilon is ([0-9.]+(?:e[+-]?\d+)?)")
+        self._pbar = tqdm(
+            total=total_epochs,
+            desc="DP-CTGAN",
+            unit="epoch",
+            dynamic_ncols=True,
+            bar_format="{l_bar}{bar}| {n}/{total} эпох [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+        )
+
+    def write(self, data: str) -> int:
+        self._buffer.write(data)
+        self._line_buf += data
+        while "\n" in self._line_buf:
+            line, self._line_buf = self._line_buf.split("\n", 1)
+            self._process_line(line)
+        return len(data)
+
+    def _process_line(self, line: str) -> None:
+        epoch_match = self._epoch_pattern.search(line)
+        if epoch_match:
+            epoch = int(epoch_match.group(1))
+            delta = epoch - self._last_epoch
+            if delta > 0:
+                self._pbar.update(delta)
+            self._last_epoch = epoch
+
+        eps_match = self._eps_pattern.search(line)
+        if eps_match:
+            self._pbar.set_postfix({"ε": f"{float(eps_match.group(1)):.4f}"})
+
+    def flush(self) -> None:
+        self._buffer.flush()
+
+    def close(self) -> None:
+        self._pbar.close()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -238,16 +287,21 @@ class DPCTGANGenerator:
         # способ получить spent epsilon -- распарсить stdout.
         # ВАЖНО: требует verbose=True в конфиге, иначе SmartNoise ничего не печатает.
         captured_output = io.StringIO()
-        with contextlib.redirect_stdout(captured_output):
-            self._synth.fit(
-                data,
-                transformer=transformer,
-                categorical_columns=categorical_columns or [],
-                ordinal_columns=ordinal_columns or [],
-                continuous_columns=continuous_columns or [],
-                preprocessor_eps=float(self.config.preprocessor_eps),
-                nullable=bool(self.config.nullable),
-            )
+        captured_output = io.StringIO()
+        tee = _ProgressTeeStream(captured_output, total_epochs=self.config.epochs)
+        try:
+            with contextlib.redirect_stdout(tee):
+                self._synth.fit(
+                    data,
+                    transformer=transformer,
+                    categorical_columns=categorical_columns or [],
+                    ordinal_columns=ordinal_columns or [],
+                    continuous_columns=continuous_columns or [],
+                    preprocessor_eps=float(self.config.preprocessor_eps),
+                    nullable=bool(self.config.nullable),
+                )
+        finally:
+            tee.close()  # закрываем бар даже при исключении
 
         self._fit_duration_sec = time.monotonic() - fit_start
 
@@ -406,7 +460,7 @@ class DPCTGANGenerator:
                 epochs=probe_epochs,
                 batch_size=int(self.config.batch_size),
                 verbose=True,
-                cuda=False,
+                cuda=True,
             )
             # Перехватываем stdout по той же схеме, что и в fit() --
             # probe_synth тоже не хранит privacy_engine после обучения
@@ -615,7 +669,7 @@ if __name__ == "__main__":
         delta=None,         # авторасчёт
         epochs=100,
         batch_size=20,
-        cuda=False,
+        cuda=True,
         verbose=True,
         disabled_dp=False,  # явно указываем режим для читаемости
         random_seed=42,
