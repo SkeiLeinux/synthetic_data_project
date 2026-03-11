@@ -124,6 +124,8 @@ class DPCTGANGenerator:
         self._spent_epsilon: Optional[float] = None
         self._spent_delta: Optional[float] = None
         self._epochs_completed: Optional[int] = None
+        self._best_alpha: Optional[float] = None
+        self._eps_history: List[Tuple[int, float]] = []
         self._sample_size: Optional[int] = None
         self._fit_duration_sec: Optional[float] = None
         self._is_fitted: bool = False
@@ -150,6 +152,9 @@ class DPCTGANGenerator:
         """
         if not isinstance(data, pd.DataFrame):
             raise TypeError("data должен быть pandas.DataFrame")
+
+        if self.config.epsilon <= 0:
+            raise ValueError(f"epsilon должен быть > 0, получено: {self.config.epsilon}")
 
         n_rows = data.shape[0]
         if n_rows < 10:
@@ -254,7 +259,7 @@ class DPCTGANGenerator:
             self._epochs_completed = self.config.epochs
         else:
             # Парсим spent epsilon и количество выполненных эпох из перехваченного вывода
-            self._spent_epsilon, self._spent_delta, self._epochs_completed = (
+            (self._spent_epsilon, self._spent_delta, self._epochs_completed, self._best_alpha, self._eps_history,) = (
                 _parse_privacy_from_stdout(
                     captured_output.getvalue(),
                     self._delta_used,
@@ -338,8 +343,10 @@ class DPCTGANGenerator:
                 "epsilon_target_after_preprocess": self._epsilon_target_after_preprocess,
                 "spent_epsilon_final": self._spent_epsilon,
                 "spent_delta_final": self._spent_delta,
+                "best_alpha_final": self._best_alpha,
                 "epochs_requested": self.config.epochs,
                 "epochs_completed": self._epochs_completed,
+                "eps_per_epoch_history": self._eps_history,
             },
 
             "training": {
@@ -414,7 +421,7 @@ class DPCTGANGenerator:
             logger.warning(f"[estimate_max_epochs] Dry run не удался: {e}")
             return None
 
-        spent_probe, _, _ = _parse_privacy_from_stdout(
+        spent_probe, _, _, _, _ = _parse_privacy_from_stdout(
             captured_probe.getvalue(), delta, probe_epochs
         )
         if spent_probe is None or spent_probe <= 0:
@@ -452,6 +459,8 @@ class DPCTGANGenerator:
             "epsilon_target_after_preprocess": self._epsilon_target_after_preprocess,
             "spent_epsilon": self._spent_epsilon,
             "spent_delta": self._spent_delta,
+            "best_alpha": self._best_alpha,  # ← добавить
+            "eps_history": self._eps_history,  # ← добавить
             "delta_used": self._delta_used,
             "epochs_completed": self._epochs_completed,
             "sample_size": self._sample_size,
@@ -484,6 +493,8 @@ class DPCTGANGenerator:
         obj._epsilon_target_after_preprocess = payload.get("epsilon_target_after_preprocess")
         obj._spent_epsilon = payload.get("spent_epsilon")
         obj._spent_delta = payload.get("spent_delta")
+        obj._best_alpha = payload.get("best_alpha")
+        obj._eps_history = payload.get("eps_history", [])
         obj._delta_used = payload.get("delta_used")
         obj._epochs_completed = payload.get("epochs_completed")
         obj._sample_size = payload.get("sample_size")
@@ -501,37 +512,52 @@ def _parse_privacy_from_stdout(
     output: str,
     delta: Optional[float],
     epochs_requested: int,
-) -> Tuple[Optional[float], Optional[float], Optional[int]]:
+) -> Tuple[
+    Optional[float],          # spent_epsilon
+    Optional[float],          # delta (проброс)
+    Optional[int],            # epochs_completed
+    Optional[float],          # best_alpha_final
+    List[Tuple[int, float]],  # eps_history: [(epoch, epsilon), ...]
+]:
     """
-    Парсит spent epsilon и число выполненных эпох из перехваченного stdout SmartNoise.
+    Парсит spent epsilon, alpha и историю расхода бюджета из stdout SmartNoise.
 
-    SmartNoise 1.0.6 не хранит privacy_engine на объекте после обучения,
-    но на каждой эпохе печатает строку вида:
-        "epsilon is 1.4843, alpha is 10.2"
-    и строку вида:
-        "Epoch 50, Loss G: 0.706, Loss D: 1.395"
+    SmartNoise 1.0.6 на каждой эпохе печатает примерно:
+        "Epoch N, Loss G: ..., Loss D: ..."
+        "epsilon is X.XXX, alpha is Y.Y"
 
-    Берём значения из последних найденных строк -- это финальное состояние
-    после завершения обучения (либо по числу эпох, либо по исчерпанию бюджета).
-
-    Ограничение: зависит от формата вывода SmartNoise. При смене версии библиотеки
-    паттерны могут потребовать обновления.
+    Логика: отслеживаем last_seen_epoch. При встрече строки с epsilon
+    записываем пару (last_seen_epoch, epsilon) в историю.
+    Берём финальные значения из последних найденных строк.
     """
     spent_epsilon: Optional[float] = None
+    best_alpha: Optional[float] = None
     epochs_completed: Optional[int] = None
+    eps_history: List[Tuple[int, float]] = []
 
     epsilon_pattern = re.compile(r"epsilon is ([0-9.]+(?:e[+-]?\d+)?)")
+    alpha_pattern   = re.compile(r"alpha is ([0-9.]+(?:e[+-]?\d+)?)")
     epoch_pattern   = re.compile(r"Epoch (\d+),")
 
-    # Перебираем строки и обновляем значения -- в итоге остаётся последнее
-    for line in output.splitlines():
-        eps_match = epsilon_pattern.search(line)
-        if eps_match:
-            spent_epsilon = float(eps_match.group(1))
+    last_seen_epoch: int = 0
 
+    for line in output.splitlines():
+        # Обновляем текущий эпох, как только видим строку "Epoch N, ..."
         epoch_match = epoch_pattern.search(line)
         if epoch_match:
-            epochs_completed = int(epoch_match.group(1))
+            last_seen_epoch = int(epoch_match.group(1))
+            epochs_completed = last_seen_epoch  # последний увиденный эпох = финальный
+
+        # Парсим epsilon и alpha (обычно на одной строке)
+        eps_match = epsilon_pattern.search(line)
+        if eps_match:
+            eps_val = float(eps_match.group(1))
+            spent_epsilon = eps_val
+            eps_history.append((last_seen_epoch, eps_val))
+
+        alpha_match = alpha_pattern.search(line)
+        if alpha_match:
+            best_alpha = float(alpha_match.group(1))
 
     if spent_epsilon is None:
         logger.warning(
@@ -541,10 +567,13 @@ def _parse_privacy_from_stdout(
     else:
         logger.info(
             f"[parse_privacy] Spent ε={spent_epsilon:.4f}, "
-            f"epochs_completed={epochs_completed}/{epochs_requested}"
+            f"best_alpha={best_alpha}, "
+            f"epochs_completed={epochs_completed}/{epochs_requested}, "
+            f"history_points={len(eps_history)}"
         )
 
-    return spent_epsilon, delta, epochs_completed
+    return spent_epsilon, delta, epochs_completed, best_alpha, eps_history
+
 
 
 def _get_package_version(package_name: str) -> str:
