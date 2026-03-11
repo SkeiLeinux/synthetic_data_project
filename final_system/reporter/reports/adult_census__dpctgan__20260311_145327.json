@@ -1,0 +1,121 @@
+{
+  "report_id": "e87fe7f7-4e43-46be-84ef-b9e24a4945b1",
+  "process_id": "test-process-001",
+  "generated_at": "2026-03-11T14:53:27.568319",
+  "dataset_name": "adult_census",
+  "generator_type": "dpctgan",
+  "verdict": {
+    "overall": "PASS",
+    "utility_ok": true,
+    "privacy_ok": true,
+    "dp_ok": true,
+    "issues": []
+  },
+  "generator": {
+    "synthesizer": "smartnoise_dpctgan",
+    "status": "fitted",
+    "dp_config": {
+      "is_dp_enabled": true,
+      "epsilon_initial": 3.0,
+      "delta": 4.47e-05,
+      "sigma": 5.0,
+      "max_grad_norm": 1.0,
+      "batch_size": 500
+    },
+    "dp_spent": {
+      "epsilon_target_after_preprocess": 1.5,
+      "spent_epsilon_final": 2.48,
+      "epochs_requested": 100,
+      "epochs_completed": 87
+    },
+    "reproducibility": {
+      "random_seed": 42
+    }
+  },
+  "utility": {
+    "metadata": {
+      "real_rows": 1000,
+      "synth_rows": 1000,
+      "eval_duration_sec": 0.28
+    },
+    "statistical": {
+      "numerical": {
+        "age": {
+          "jsd": 0.063,
+          "mean_delta": -3.97
+        },
+        "income": {
+          "jsd": 0.016,
+          "mean_delta": -1221.0
+        }
+      },
+      "categorical": {
+        "city": {
+          "tvd": 0.232
+        },
+        "education": {
+          "tvd": 0.129
+        }
+      },
+      "summary": {
+        "mean_jsd": 0.039,
+        "mean_tvd": 0.18
+      }
+    },
+    "correlations": {
+      "pearson_corr_mae": 0.019,
+      "cramers_v_mae": 0.082
+    },
+    "ml_efficacy": {
+      "trtr": {
+        "f1_weighted": 0.58,
+        "roc_auc": 0.49
+      },
+      "tstr": {
+        "f1_weighted": 0.57,
+        "roc_auc": 0.5
+      },
+      "utility_loss": {
+        "metric": "f1_weighted",
+        "value": 0.0116,
+        "interpretation": "ok (loss < 10%)"
+      }
+    }
+  },
+  "privacy": {
+    "metadata": {
+      "real_rows": 1000,
+      "synth_rows": 1000,
+      "eval_duration_sec": 0.66
+    },
+    "dp_guarantees": {
+      "available": true,
+      "is_dp_enabled": true,
+      "spent_epsilon_final": 2.48,
+      "epochs_completed": 87
+    },
+    "empirical_risk": {
+      "distance_metrics": {
+        "dcr": {
+          "privacy_preserved": true,
+          "interpretation": "ok: синтетика не ближе к обучающим данным, чем holdout"
+        },
+        "nndr": {
+          "synth_mean": 0.679,
+          "share_below_0.1": 0.01
+        }
+      },
+      "membership_inference": {
+        "attack_auc": 0.516,
+        "interpretation": "protected: атака не лучше случайного угадывания"
+      }
+    },
+    "diagnostic": {
+      "classical": {
+        "k_anonymity": 12,
+        "l_diversity": 3,
+        "t_closeness": 0.12
+      }
+    }
+  }
+}
