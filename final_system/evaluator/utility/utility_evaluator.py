@@ -20,8 +20,8 @@ from typing import Dict, List, Literal, Optional
 
 import pandas as pd
 
-from statistical import compute_correlation_delta, compute_marginal_stats
-from ml_efficacy import MLEfficacyConfig, run_tstr
+from .statistical import compute_correlation_delta, compute_marginal_stats
+from .ml_efficacy import MLEfficacyConfig, run_tstr
 
 logger = logging.getLogger(__name__)
 

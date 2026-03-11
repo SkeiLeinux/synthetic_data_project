@@ -22,9 +22,9 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from classical import compute_classical_metrics
-from distance_metrics import compute_distance_metrics
-from attack_simulation import run_membership_inference
+from .classical import compute_classical_metrics
+from .distance_metrics import compute_distance_metrics
+from .attack_simulation import run_membership_inference
 
 logger = logging.getLogger(__name__)
 
