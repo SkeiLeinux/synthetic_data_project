@@ -212,3 +212,4 @@ __marimo__/
 *.parquet
 logs/
 final_system/reporter/reports/
+final_system/data
