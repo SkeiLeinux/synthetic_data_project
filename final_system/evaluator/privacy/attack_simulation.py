@@ -3,17 +3,30 @@ attack_simulation.py
 
 Симуляция Membership Inference Attack (MIA) на генеративную модель.
 
-Логика атаки (Shadow Model approach, упрощенная версия):
+Логика атаки (distance-based proxy MIA):
 1. Разбиваем реальные данные на train (использовался для обучения генератора) и holdout.
-2. Обучаем атакующий классификатор: "эта запись была в обучающих данных или нет?"
-3. Признаки для атаки: DCR (расстояние до ближайшей синтетической записи).
-   Гипотеза: если запись была в train, она "оставляет след" в синтетике → меньше DCR.
-4. Если точность атакующей модели ≈ 0.5 → DP работает, генератор не запоминает данные.
-   Если точность >> 0.5 → есть риск утечки.
+2. Для каждой записи из train и holdout считаем DCR — расстояние до ближайшей
+   синтетической записи.
+3. Обучаем атакующий классификатор: "эта запись была в train или нет?"
+   Признак атаки — DCR. Гипотеза: если запись была в train, генератор мог
+   "запомнить" её → она окажется ближе к синтетике → меньше DCR.
+4. Если AUC атакующей модели ≈ 0.5 → DP работает, генератор не запоминает данные.
+   Если AUC >> 0.5 → есть риск утечки.
 
-Ограничение: это упрощенная (proxy) MIA, а не полная shadow-model атака.
-Она дает нижнюю оценку риска. Достаточна для дипломной работы и соответствует
-требованиям ПНСТ к практической оценке рисков (симуляция атак).
+Ограничение: это упрощённая прокси-реализация (distance-based proxy MIA),
+а не полноценная shadow-model атака по методу Shokri et al. (2017).
+Полная shadow-model MIA требует обучения нескольких «теневых» моделей на
+отдельных независимых датасетах — это выходит за рамки данного инструмента.
+Proxy MIA даёт консервативную нижнюю оценку риска: если AUC высокий даже
+здесь, это сильный сигнал меморизации. Низкий AUC — необходимое, но не
+достаточное условие отсутствия утечки.
+
+Кодирование признаков:
+    Используется та же схема, что и в distance_metrics.py:
+    категориальные → one-hot (обучаем на real_train_df),
+    числовые → MinMaxScaler [0, 1].
+    Это гарантирует, что расстояния в признаковом пространстве не искажены
+    артефактами порядкового кодирования LabelEncoder.
 """
 
 from __future__ import annotations
@@ -26,27 +39,44 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler
 
 logger = logging.getLogger(__name__)
 
 
 def _encode(df: pd.DataFrame, reference_df: pd.DataFrame) -> np.ndarray:
-    """Кодирует df используя словарь из reference_df (аналог distance_metrics)."""
+    """
+    Кодирует df в числовой массив, используя словарь признаков из reference_df.
+
+    Категориальные колонки → one-hot (pd.get_dummies, обучаем на reference).
+    Числовые колонки       → MinMaxScaler [0, 1] (обучаем на reference).
+
+    Категории из df, отсутствующие в reference, заполняются нулём (reindex).
+    Этот метод намеренно дублирует логику distance_metrics._encode_and_normalize,
+    чтобы attack_simulation оставался самодостаточным модулем.
+    """
     common = [c for c in reference_df.columns if c in df.columns]
     ref = reference_df[common].copy()
     qry = df[common].copy()
 
-    for col in ref.select_dtypes(exclude=[np.number]).columns:
-        le = LabelEncoder()
-        combined = pd.concat([ref[col], qry[col]], axis=0).astype(str)
-        le.fit(combined)
-        ref[col] = le.transform(ref[col].astype(str))
-        qry[col] = le.transform(qry[col].astype(str))
+    num_cols = ref.select_dtypes(include=[np.number]).columns.tolist()
+    cat_cols = ref.select_dtypes(exclude=[np.number]).columns.tolist()
 
-    scaler = MinMaxScaler()
-    scaler.fit(ref.select_dtypes(include=[np.number]).fillna(0))
-    return scaler.transform(qry.select_dtypes(include=[np.number]).fillna(0))
+    # One-hot кодирование категориальных признаков
+    ref_dummies = pd.get_dummies(ref[cat_cols], prefix_sep="__") if cat_cols else pd.DataFrame(index=ref.index)
+    qry_dummies = pd.get_dummies(qry[cat_cols], prefix_sep="__") if cat_cols else pd.DataFrame(index=qry.index)
+    qry_dummies = qry_dummies.reindex(columns=ref_dummies.columns, fill_value=0)
+
+    # Нормализация числовых признаков
+    if num_cols:
+        scaler = MinMaxScaler()
+        ref_num = scaler.fit_transform(ref[num_cols].fillna(0))
+        qry_num = scaler.transform(qry[num_cols].fillna(0))
+    else:
+        ref_num = np.empty((len(ref), 0))
+        qry_num = np.empty((len(qry), 0))
+
+    return np.hstack([qry_num, qry_dummies.values.astype(float)])
 
 
 def _compute_min_distances_to_synth(
@@ -75,21 +105,24 @@ def run_membership_inference(
     sample_size: int = 1000,
 ) -> Dict:
     """
-    Запускает упрощенную MIA и возвращает метрики атаки.
+    Запускает proxy MIA и возвращает метрики атаки.
 
     Параметры:
         real_train_df   — данные, на которых обучался генератор (метка: 1 = "в train")
-        real_holdout_df — данные, которые генератор НЕ видел (метка: 0 = "не в train")
+        real_holdout_df — данные, которые генератор НЕ видел  (метка: 0 = "не в train")
         synth_df        — синтетические данные от генератора
         sample_size     — ограничение выборки для скорости
 
+    Кодирование выполняется относительно real_train_df — это эталон
+    признакового пространства для всех трёх датасетов.
+
     Интерпретация результатов:
-        attack_auc ≈ 0.5 → атака не работает, генератор защищен (хороший результат для DP)
+        attack_auc ≈ 0.5 → атака не работает, генератор защищён (хороший результат для DP)
         attack_auc > 0.7 → атака эффективна, есть риск утечки membership info
     """
     # Сэмплируем для баланса и скорости
     n = min(sample_size, len(real_train_df), len(real_holdout_df))
-    train_sample = real_train_df.sample(n, random_state=random_state)
+    train_sample   = real_train_df.sample(n, random_state=random_state)
     holdout_sample = real_holdout_df.sample(n, random_state=random_state)
 
     if len(synth_df) > sample_size:
@@ -101,29 +134,29 @@ def run_membership_inference(
         f"[MIA] Запуск атаки. train_members={n}, non_members={n}, synth={len(synth_sample)}"
     )
 
-    # Кодируем синтетику относительно train (эталон для признакового пространства)
-    ref_encoded = _encode(real_train_df, real_train_df)
-    synth_encoded = _encode(synth_sample, real_train_df)
-    train_encoded = _encode(train_sample, real_train_df)
+    # Кодируем все три датасета относительно real_train_df.
+    # Важно: один и тот же эталон признакового пространства для всех —
+    # только так расстояния между train/holdout/synth сопоставимы.
+    synth_encoded   = _encode(synth_sample,   real_train_df)
+    train_encoded   = _encode(train_sample,   real_train_df)
     holdout_encoded = _encode(holdout_sample, real_train_df)
 
     # Признак атаки: расстояние от реальной записи до ближайшей синтетической.
     # Гипотеза: train-записи "отпечатались" в синтетике → меньше расстояние.
-    dist_train = _compute_min_distances_to_synth(train_encoded, synth_encoded)
+    dist_train   = _compute_min_distances_to_synth(train_encoded,   synth_encoded)
     dist_holdout = _compute_min_distances_to_synth(holdout_encoded, synth_encoded)
 
     # Формируем датасет для атакующего классификатора
     X_attack = np.concatenate([dist_train, dist_holdout]).reshape(-1, 1)
     y_attack = np.concatenate([np.ones(n), np.zeros(n)])
 
-    # Атакующий классификатор: простой RF на одном признаке (DCR)
+    # Атакующий классификатор: простой RF на одном признаке (DCR).
+    # Кросс-валидация даёт более честную оценку, чем простой train/test.
     attacker = RandomForestClassifier(
         n_estimators=n_estimators,
         random_state=random_state,
         n_jobs=-1,
     )
-
-    # Кросс-валидация дает более честную оценку, чем простой train/test
     cv_scores = cross_val_score(attacker, X_attack, y_attack, cv=5, scoring="roc_auc")
     attack_auc = float(np.mean(cv_scores))
 
@@ -146,7 +179,8 @@ def run_membership_inference(
         "n_members_tested": n,
         "n_non_members_tested": n,
         "note": (
-            "Proxy MIA на основе DCR. "
-            "AUC ≈ 0.5 означает отсутствие утечки membership-информации."
+            "Distance-based proxy MIA. "
+            "AUC ≈ 0.5 означает отсутствие утечки membership-информации. "
+            "Это консервативная нижняя оценка риска — не полная shadow-model MIA."
         ),
     }
