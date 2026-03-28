@@ -102,6 +102,8 @@ synth_df, report = run_pipeline(
     n_synth_rows=30000,
     dataset_name="adult_census",
     output_dir="final_system/reporter/reports",
+    holdout_size=0.2,
+    random_state=42,
 )
 
 synth_df.to_csv("final_system/data/adult_synth.csv", index=False)

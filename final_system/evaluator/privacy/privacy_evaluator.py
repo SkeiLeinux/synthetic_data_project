@@ -8,6 +8,15 @@ privacy_evaluator.py
 - dp_guarantees:   формальные гарантии (из отчета генератора)
 - empirical_risk:  DCR/NNDR + MIA (эмпирические метрики)
 - diagnostic:      k/l/t-анонимность (диагностика структуры таблицы)
+
+Разделение реальных данных на train/holdout выполняется в run_pipeline()
+до обучения генератора. evaluate() принимает готовые части — это обеспечивает
+методологическую корректность оценки меморизации:
+  - DCR_synth vs DCR_holdout: сравниваем, насколько синтетика «близка» к train,
+    используя holdout как контрольную группу.
+  - MIA: атакующий классификатор учится различать train-записи (label=1)
+    и holdout-записи (label=0) по их расстоянию до синтетики.
+    Если генератор не меморизировал данные, расстояния будут неразличимы.
 """
 
 from __future__ import annotations
@@ -20,7 +29,6 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
 from .classical import compute_classical_metrics
 from .distance_metrics import compute_distance_metrics
@@ -49,8 +57,6 @@ class PrivacyConfig:
     mia_sample_size: int = 1000
     mia_n_estimators: int = 100
 
-    # Доля реальных данных для holdout (для DCR и MIA)
-    holdout_size: float = 0.2
     random_state: int = 42
 
 
@@ -58,8 +64,12 @@ class PrivacyEvaluator:
     """
     Оценщик приватности синтетических данных.
 
-    Принимает real_df, synth_df и опционально dp_report от генератора.
-    Возвращает полный privacy_report для передачи в reporter.
+    Принимает real_train_df, real_holdout_df, synth_df и опционально
+    dp_report от генератора. Возвращает полный privacy_report для reporter.
+
+    Разделение реальных данных на train/holdout выполняется снаружи
+    (в run_pipeline), чтобы гарантировать: генератор обучается только
+    на train, holdout остаётся «невидимым» эталоном для оценки меморизации.
 
     Ключевое разграничение в отчете (важно для диплома и ПНСТ):
     - dp_guarantees: "DP сказал, что epsilon=X" (математическая гарантия)
@@ -72,41 +82,43 @@ class PrivacyEvaluator:
 
     def evaluate(
         self,
-        real_df: pd.DataFrame,
+        real_train_df: pd.DataFrame,
+        real_holdout_df: pd.DataFrame,
         synth_df: pd.DataFrame,
         dp_report: Optional[Dict[str, Any]] = None,
     ) -> Dict:
         """
         Запускает все включенные группы метрик и возвращает единый отчет.
 
-        dp_report — словарь из DPCTGANGenerator.privacy_report().
-        Если передан, формальные DP-гарантии включаются в отчет.
+        Параметры:
+            real_train_df   — данные, на которых обучался генератор
+            real_holdout_df — данные, которые генератор НЕ видел (отложенная выборка)
+            synth_df        — синтетические данные от генератора
+            dp_report       — словарь из DPCTGANGenerator.privacy_report();
+                              если передан, формальные DP-гарантии включаются в отчет
         """
-        if not isinstance(real_df, pd.DataFrame) or not isinstance(synth_df, pd.DataFrame):
-            raise TypeError("real_df и synth_df должны быть pandas.DataFrame")
+        for name, df in [
+            ("real_train_df", real_train_df),
+            ("real_holdout_df", real_holdout_df),
+            ("synth_df", synth_df),
+        ]:
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError(f"{name} должен быть pandas.DataFrame")
 
         logger.info(
             f"[PrivacyEvaluator] Старт оценки. "
-            f"real={real_df.shape}, synth={synth_df.shape}"
+            f"real_train={real_train_df.shape}, "
+            f"real_holdout={real_holdout_df.shape}, "
+            f"synth={synth_df.shape}"
         )
 
         eval_start = time.monotonic()
 
-        # Разбиваем реальные данные на train и holdout.
-        # train — то, на чём обучался генератор.
-        # holdout — данные, которые генератор НЕ видел (нужны для DCR и MIA).
-        real_train, real_holdout = train_test_split(
-            real_df,
-            test_size=self.config.holdout_size,
-            random_state=self.config.random_state,
-        )
-
         report: Dict = {
             "metadata": {
-                "real_rows": len(real_df),
+                "real_train_rows": len(real_train_df),
+                "real_holdout_rows": len(real_holdout_df),
                 "synth_rows": len(synth_df),
-                "real_train_rows": len(real_train),
-                "real_holdout_rows": len(real_holdout),
             },
             # Формальные гарантии: передаются напрямую из генератора
             "dp_guarantees": self._extract_dp_guarantees(dp_report),
@@ -118,18 +130,18 @@ class PrivacyEvaluator:
         if self.config.compute_distance:
             logger.info("[PrivacyEvaluator] Считаем DCR и NNDR...")
             report["empirical_risk"]["distance_metrics"] = compute_distance_metrics(
-                real_train_df=real_train,
-                real_holdout_df=real_holdout,
+                real_train_df=real_train_df,
+                real_holdout_df=real_holdout_df,
                 synth_df=synth_df,
                 sample_size=self.config.distance_sample_size,
             )
 
-        # Membership Inference Attack
+        # Proxy Membership Inference Attack (distance-based)
         if self.config.compute_mia:
-            logger.info("[PrivacyEvaluator] Запускаем MIA...")
+            logger.info("[PrivacyEvaluator] Запускаем proxy MIA...")
             report["empirical_risk"]["membership_inference"] = run_membership_inference(
-                real_train_df=real_train,
-                real_holdout_df=real_holdout,
+                real_train_df=real_train_df,
+                real_holdout_df=real_holdout_df,
                 synth_df=synth_df,
                 n_estimators=self.config.mia_n_estimators,
                 random_state=self.config.random_state,
@@ -145,9 +157,12 @@ class PrivacyEvaluator:
                 )
             else:
                 logger.info("[PrivacyEvaluator] Считаем k/l/t-анонимность...")
+                # Для k/l/t используем полный реальный датасет (train + holdout)
+                # как эталон распределения при расчёте t-близости.
+                real_full = pd.concat([real_train_df, real_holdout_df], ignore_index=True)
                 report["diagnostic"]["classical"] = compute_classical_metrics(
                     synth_df=synth_df,
-                    real_df=real_df,
+                    real_df=real_full,
                     quasi_identifiers=self.config.quasi_identifiers,
                     sensitive_attribute=self.config.sensitive_attribute,
                 )
@@ -179,68 +194,3 @@ class PrivacyEvaluator:
             "epochs_completed": dp_spent.get("epochs_completed"),
             "epochs_requested": dp_spent.get("epochs_requested"),
         }
-
-
-# ─────────────────────────────────────────────
-# Тестовый блок
-# ─────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import json
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(levelname)s] %(message)s",
-        stream=sys.stdout,
-    )
-
-    print("=== ТЕСТ PRIVACY EVALUATOR ===\n")
-
-    np.random.seed(42)
-    N = 1000
-
-    real_df = pd.DataFrame({
-        "age": np.random.randint(18, 70, N),
-        "income": np.random.normal(50000, 15000, N).round(0),
-        "city": np.random.choice(["Moscow", "SPb", "Kazan", "Novosibirsk"], N),
-        "education": np.random.choice(["high", "middle", "low"], N),
-        "income_level": np.random.choice(["low", "medium", "high"], N),
-    })
-
-    # Синтетика с небольшим шумом
-    synth_df = pd.DataFrame({
-        "age": np.random.randint(20, 75, N),
-        "income": np.random.normal(52000, 17000, N).round(0),
-        "city": np.random.choice(["Moscow", "SPb", "Kazan", "Novosibirsk"], N, p=[0.5, 0.2, 0.2, 0.1]),
-        "education": np.random.choice(["high", "middle", "low"], N, p=[0.5, 0.3, 0.2]),
-        "income_level": np.random.choice(["low", "medium", "high"], N),
-    })
-
-    # Имитируем dp_report от генератора
-    mock_dp_report = {
-        "dp_config": {
-            "is_dp_enabled": True,
-            "epsilon_initial": 3.0,
-            "delta": 4.47e-05,
-        },
-        "dp_spent": {
-            "spent_epsilon_final": 2.48,
-            "epochs_requested": 100,
-            "epochs_completed": 87,
-        },
-    }
-
-    config = PrivacyConfig(
-        quasi_identifiers=["age", "city", "education"],
-        sensitive_attribute="income_level",
-        compute_classical=True,
-        compute_distance=True,
-        compute_mia=True,
-        distance_sample_size=500,
-        mia_sample_size=300,
-    )
-
-    evaluator = PrivacyEvaluator(config)
-    report = evaluator.evaluate(real_df, synth_df, dp_report=mock_dp_report)
-
-    print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
-    print("\n=== ТЕСТ ЗАВЕРШЁН ===")

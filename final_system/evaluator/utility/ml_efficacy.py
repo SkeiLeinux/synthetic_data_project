@@ -8,6 +8,10 @@ ml_efficacy.py
   TSTR: обучаем на synth      → тестируем на real_test  (качество синтетики)
   Utility Loss = TRTR_score - TSTR_score  (чем меньше, тем лучше)
 
+ВАЖНО: real_train, real_test и synth_df передаются снаружи — разделение
+на holdout выполняется в run_pipeline() до обучения генератора, а не здесь.
+Это принципиально: генератор не должен видеть real_test ни на каком этапе.
+
 Поддерживаемые задачи: classification (F1, ROC-AUC), regression (MAE, R²).
 """
 
@@ -26,7 +30,6 @@ from sklearn.metrics import (
     r2_score,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 logger = logging.getLogger(__name__)
@@ -45,10 +48,6 @@ class MLEfficacyConfig:
     n_estimators: int = 100
     max_depth: Optional[int] = None
     random_state: int = 42
-
-    # Доля реальных данных для отложенного теста (holdout).
-    # Этот тест-сет не участвует ни в обучении TRTR, ни в обучении TSTR.
-    test_size: float = 0.2
 
     # Дополнительные колонки, которые нужно исключить из признаков
     drop_columns: List[str] = field(default_factory=list)
@@ -176,32 +175,31 @@ def _run_single_experiment(
 # ─────────────────────────────────────────────
 
 def run_tstr(
-    real_df: pd.DataFrame,
+    real_train_df: pd.DataFrame,
     synth_df: pd.DataFrame,
+    real_test_df: pd.DataFrame,
     config: MLEfficacyConfig,
 ) -> Dict:
     """
     Запускает TRTR и TSTR и считает Utility Loss.
 
-    Важно: real_df делится на train/test внутри функции.
-    synth_df используется целиком как обучающая выборка для TSTR
-    (синтетических данных нет смысла разбивать на train/test).
-    real_test — единый holdout для обоих экспериментов.
+    Разделение реальных данных на train/test выполняется в run_pipeline()
+    до обучения генератора и передаётся сюда готовым:
+        real_train_df — обучающая часть реальных данных (генератор её видел)
+        synth_df      — синтетические данные от генератора
+        real_test_df  — отложенная тестовая выборка (генератор её НЕ видел)
+
+    TRTR обучается на real_train_df, тестируется на real_test_df.
+    TSTR обучается на synth_df, тестируется на том же real_test_df.
+    real_test_df — единый holdout для обоих экспериментов.
     """
-    # Отделяем holdout от реальных данных — он общий для TRTR и TSTR
-    real_train, real_test = train_test_split(
-        real_df,
-        test_size=config.test_size,
-        random_state=config.random_state,
-    )
-
     logger.info(
-        f"[MLEfficacy] real_train={len(real_train)}, "
-        f"synth_train={len(synth_df)}, real_test={len(real_test)}"
+        f"[MLEfficacy] real_train={len(real_train_df)}, "
+        f"synth_train={len(synth_df)}, real_test={len(real_test_df)}"
     )
 
-    trtr_scores = _run_single_experiment(real_train, real_test, config, label="TRTR")
-    tstr_scores = _run_single_experiment(synth_df, real_test, config, label="TSTR")
+    trtr_scores = _run_single_experiment(real_train_df, real_test_df, config, label="TRTR")
+    tstr_scores = _run_single_experiment(synth_df, real_test_df, config, label="TSTR")
 
     # Utility Loss: по основной метрике (f1 или r2).
     # Положительное значение → синтетика хуже реальных данных.

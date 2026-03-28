@@ -5,10 +5,15 @@ utility_evaluator.py
 Оркестрирует вызовы statistical.py и ml_efficacy.py,
 возвращает единый utility_report для дальнейшей передачи в reporter.
 
+Разделение реальных данных на train/test выполняется в run_pipeline()
+до обучения генератора. evaluate() принимает готовые части, не делает
+split самостоятельно. Это обеспечивает методологическую корректность:
+real_test_df — отложенная выборка, которую генератор не видел ни разу.
+
 Использование:
     config = UtilityConfig(target_column="income", task_type="classification")
     evaluator = UtilityEvaluator(config)
-    report = evaluator.evaluate(real_df, synth_df)
+    report = evaluator.evaluate(real_train_df, synth_df, real_test_df)
 """
 
 from __future__ import annotations
@@ -44,7 +49,6 @@ class UtilityConfig:
     # Параметры ML-оценки
     n_estimators: int = 100
     max_depth: Optional[int] = None
-    test_size: float = 0.2
     random_state: int = 42
 
     # Колонки, которые нужно исключить из признаков (ID, технические поля и т.д.)
@@ -55,8 +59,12 @@ class UtilityEvaluator:
     """
     Оценщик полезности синтетических данных.
 
-    Принимает пару (real_df, synth_df) и возвращает структурированный
-    utility_report, совместимый с форматом итогового отчета системы (reporter).
+    Принимает тройку (real_train_df, synth_df, real_test_df) и возвращает
+    структурированный utility_report, совместимый с форматом итогового
+    отчета системы (reporter).
+
+    Разделение на train/test выполняется снаружи (в run_pipeline),
+    чтобы гарантировать, что holdout не виден генератору.
     """
 
     def __init__(self, config: UtilityConfig) -> None:
@@ -64,38 +72,52 @@ class UtilityEvaluator:
 
     def evaluate(
         self,
-        real_df: pd.DataFrame,
+        real_train_df: pd.DataFrame,
         synth_df: pd.DataFrame,
+        real_test_df: pd.DataFrame,
     ) -> Dict:
         """
         Запускает все включенные группы метрик и возвращает единый отчет.
 
+        Параметры:
+            real_train_df — часть реальных данных, на которой обучался генератор
+            synth_df      — сгенерированные синтетические данные
+            real_test_df  — отложенная тестовая выборка (генератор её НЕ видел)
+
+        Статистические метрики (JSD, TVD, корреляции) считаются между
+        real_train_df и synth_df — сравниваем синтетику с тем, чему учился генератор.
+
+        ML-метрики (TSTR/TRTR) используют real_test_df как единый holdout для
+        честного сравнения качества моделей, обученных на реальных и синтетических данных.
+
         Структура отчета:
-        - metadata: размеры датасетов, время оценки
+        - metadata:    размеры датасетов, время оценки
         - statistical: JSD, TVD, stats delta по колонкам
         - correlations: MAE матриц Pearson и Cramér's V
-        - ml_efficacy: TRTR, TSTR, Utility Loss
+        - ml_efficacy:  TRTR, TSTR, Utility Loss
         """
-        if not isinstance(real_df, pd.DataFrame) or not isinstance(synth_df, pd.DataFrame):
-            raise TypeError("real_df и synth_df должны быть pandas.DataFrame")
+        for name, df in [("real_train_df", real_train_df), ("synth_df", synth_df), ("real_test_df", real_test_df)]:
+            if not isinstance(df, pd.DataFrame):
+                raise TypeError(f"{name} должен быть pandas.DataFrame")
 
-        if self.config.target_column not in real_df.columns:
+        if self.config.target_column not in real_train_df.columns:
             raise ValueError(
-                f"Целевая колонка '{self.config.target_column}' не найдена в real_df"
+                f"Целевая колонка '{self.config.target_column}' не найдена в real_train_df"
             )
 
         logger.info(
             f"[UtilityEvaluator] Старт оценки. "
-            f"real={real_df.shape}, synth={synth_df.shape}, "
-            f"target='{self.config.target_column}'"
+            f"real_train={real_train_df.shape}, synth={synth_df.shape}, "
+            f"real_test={real_test_df.shape}, target='{self.config.target_column}'"
         )
 
         eval_start = time.monotonic()
         report: Dict = {
             "metadata": {
-                "real_rows": len(real_df),
+                "real_train_rows": len(real_train_df),
                 "synth_rows": len(synth_df),
-                "real_columns": len(real_df.columns),
+                "real_test_rows": len(real_test_df),
+                "real_columns": len(real_train_df.columns),
                 "target_column": self.config.target_column,
                 "task_type": self.config.task_type,
             },
@@ -103,10 +125,16 @@ class UtilityEvaluator:
             "correlations": None,
             "ml_efficacy": None,
         }
-        # Убираем целевую переменную из статистики
+
+        # Статистику считаем между train и synth: сравниваем с тем,
+        # на чём обучался генератор, а не с holdout.
         exclude_from_stats = set(self.config.drop_columns + [self.config.target_column])
-        real_features = real_df.drop(columns=[c for c in exclude_from_stats if c in real_df.columns])
-        synth_features = synth_df.drop(columns=[c for c in exclude_from_stats if c in synth_df.columns])
+        real_features = real_train_df.drop(
+            columns=[c for c in exclude_from_stats if c in real_train_df.columns]
+        )
+        synth_features = synth_df.drop(
+            columns=[c for c in exclude_from_stats if c in synth_df.columns]
+        )
 
         # Статистические метрики по колонкам
         if self.config.compute_statistical:
@@ -126,68 +154,18 @@ class UtilityEvaluator:
                 task_type=self.config.task_type,
                 n_estimators=self.config.n_estimators,
                 max_depth=self.config.max_depth,
-                test_size=self.config.test_size,
                 random_state=self.config.random_state,
                 drop_columns=self.config.drop_columns,
             )
-            report["ml_efficacy"] = run_tstr(real_df, synth_df, ml_config)
+            report["ml_efficacy"] = run_tstr(
+                real_train_df=real_train_df,
+                synth_df=synth_df,
+                real_test_df=real_test_df,
+                config=ml_config,
+            )
 
         report["metadata"]["eval_duration_sec"] = round(time.monotonic() - eval_start, 2)
         logger.info(
             f"[UtilityEvaluator] Готово за {report['metadata']['eval_duration_sec']}с"
         )
         return report
-
-
-# ─────────────────────────────────────────────
-# Тестовый блок
-# ─────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import numpy as np
-    import sys
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(levelname)s] %(message)s",
-        stream=sys.stdout  # ← синхронизируем с print()
-    )
-
-    print("=== ТЕСТ UTILITY EVALUATOR ===\n")
-
-    # Генерируем тестовые данные, имитирующие реальный и синтетический датасеты.
-    # Синтетика намеренно немного зашумлена, чтобы метрики были ненулевыми.
-    np.random.seed(42)
-    N = 1000
-
-    real_df = pd.DataFrame({
-        "age": np.random.randint(18, 70, N),
-        "income": np.random.normal(50000, 15000, N).round(0),
-        "city": np.random.choice(["Moscow", "SPb", "Kazan", "Novosibirsk"], N),
-        "education": np.random.choice(["high", "middle", "low"], N),
-        "target": np.random.choice([0, 1], N, p=[0.7, 0.3]),
-    })
-
-    # Синтетика: немного смещенные распределения + добавленный шум
-    synth_df = pd.DataFrame({
-        "age": np.random.randint(20, 75, N),
-        "income": np.random.normal(52000, 17000, N).round(0),
-        "city": np.random.choice(["Moscow", "SPb", "Kazan", "Novosibirsk"], N, p=[0.5, 0.2, 0.2, 0.1]),
-        "education": np.random.choice(["high", "middle", "low"], N, p=[0.5, 0.3, 0.2]),
-        "target": np.random.choice([0, 1], N, p=[0.65, 0.35]),
-    })
-
-    config = UtilityConfig(
-        target_column="target",
-        task_type="classification",
-        n_estimators=50,   # уменьшаем для быстрого теста
-        random_state=42,
-    )
-
-    evaluator = UtilityEvaluator(config)
-    report = evaluator.evaluate(real_df, synth_df)
-
-    # Вывод отчета
-    import json
-    print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
-    print("\n=== ТЕСТ ЗАВЕРШЁН ===")
