@@ -10,7 +10,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 try:
-    from .logger_config import setup_logger
+    from final_system.logger_config import setup_logger
 except ImportError:
     from logger_config import setup_logger
 
