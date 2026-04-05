@@ -1,0 +1,153 @@
+# ==============================================================================
+# Конфигурация сервиса генерации синтетических данных
+# Версия: 1.0
+# ==============================================================================
+
+# ── Пути ──────────────────────────────────────────────────────────────────────
+paths:
+  logs: logs/app.log
+  output_dir: reporter/reports
+
+# ── Внутренняя БД сервиса (System Storage) ────────────────────────────────────
+# Используется ProcessRegistry для хранения процессов, логов и метаданных.
+# Инициализируется через db/init_db.sql.
+database:
+  host: localhost
+  port: 5432
+  dbname: synthetic_data_db
+  user: postgres
+  password: "111"
+  schema: synthetic_data_schema
+
+# ── Источник данных компании (Data Storage — чтение) ─────────────────────────
+# Используется DataIO.load_from_db().
+# Если данные загружаются из CSV — эту секцию можно не заполнять.
+data_source:
+  host: localhost
+  port: 5432
+  dbname: company_data_db
+  user: postgres
+  password: "111"
+
+# ── Целевое хранилище синтетики (Data Storage — запись) ──────────────────────
+# Используется DataIO.save_to_db().
+# Если синтетика сохраняется в CSV — эту секцию можно не заполнять.
+data_target:
+  host: localhost
+  port: 5432
+  dbname: company_data_db
+  user: postgres
+  password: "111"
+
+# ── Параметры пайплайна ───────────────────────────────────────────────────────
+pipeline:
+  dataset_name: adult_census
+
+  # Источник данных: csv | db
+  # При data_source: db заполнить секцию data_source: и указать db_query.
+  data_source: csv
+  data_path: data/adult.csv
+  db_query: null            # пример: "SELECT * FROM raw_data WHERE year = 2024"
+
+  sample_size: 0            # 0 = взять все строки
+  n_synth_rows: 0           # 0 = совпадает с размером обучающей выборки
+  run_preprocessing: true
+  holdout_size: 0.2         # доля отложенной выборки (0.0–1.0)
+  random_state: 42
+
+# ── Генератор DP-CTGAN ────────────────────────────────────────────────────────
+generator:
+  # Параметры дифференциальной приватности
+  epsilon: 3.0            # бюджет приватности; меньше = строже защита
+  preprocessor_eps: 0.5   # доля бюджета на приватный препроцессинг; должно быть < epsilon
+  delta: null             # null = авторасчёт как 1 / (n * sqrt(n))
+  sigma: 5.0              # множитель шума DP-SGD; больше = строже DP, хуже качество
+  max_per_sample_grad_norm: 1.0  # клиппинг нормы градиентов (C в DP-SGD)
+
+  # Параметры обучения
+  epochs: 300
+  batch_size: 500
+  discriminator_steps: 1
+  pac: 1
+
+  # Архитектура
+  embedding_dim: 128
+  generator_dim: [256, 256]
+  discriminator_dim: [256, 256]
+
+  # Оптимизатор
+  generator_lr: 0.0002
+  generator_decay: 0.000001
+  discriminator_lr: 0.0002
+  discriminator_decay: 0.000001
+
+  # Режимы
+  cuda: true
+  verbose: true
+  disabled_dp: false      # true = обычный GAN без шума (baseline для сравнения)
+  loss: cross_entropy
+  nullable: false
+
+  # Воспроизводимость
+  random_seed: 42
+
+# ── Оценка полезности ─────────────────────────────────────────────────────────
+utility:
+  target_column: income
+  task_type: classification   # classification | regression
+  drop_columns:
+    - fnlwgt
+  n_estimators: 100
+  random_state: 42
+
+# ── Оценка приватности ────────────────────────────────────────────────────────
+privacy:
+  quasi_identifiers:
+    - age
+    - education
+    - occupation
+    - sex
+    - race
+  sensitive_attribute: income
+  compute_classical: true
+  compute_distance: true
+  compute_mia: true
+  distance_sample_size: 2000
+  mia_sample_size: 1000
+
+# ── Пороговые значения вердикта ───────────────────────────────────────────────
+# PASS если все проверки пройдены, FAIL если хотя бы одна провалена.
+thresholds:
+  max_utility_loss: 0.25    # максимальная потеря ML-метрики (TRTR - TSTR)
+  max_mean_jsd: 0.40        # максимальное среднее JSD по числовым колонкам
+  max_mia_auc: 0.60         # максимальный AUC атаки MIA (0.6 = граница случайности)
+  require_dcr_privacy_preserved: true
+  require_dp_enabled: true
+  max_spent_epsilon: null   # null = не проверять
+
+# ── Схема данных ──────────────────────────────────────────────────────────────
+# Если задано — используется как есть.
+# Если не задано (или пустые списки) — схема определяется автоматически
+# через DataProcessor.detect_column_types().
+data_schema:
+  categorical:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+    - income
+  continuous:
+    - age
+    - fnlwgt
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  # Колонки, которые явно исключаются из схемы (не передаются генератору).
+  # Полезно для технических полей (ID, веса записей и т.п.).
+  exclude:
+    - fnlwgt

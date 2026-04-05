@@ -1,36 +1,32 @@
-# final_system/process_registry.py
+# final_system/registry/process_registry.py
 #
 # Внутренняя БД сервиса (System Storage на архитектурной диаграмме).
 # Ведёт реестр процессов генерации, хранит метаданные и логи.
 #
-# Работает только со своей PostgreSQL-базой (секция [DATABASE] в config.ini),
-# которая инициализируется через db/init_db.sql.
+# Принимает AppConfig из config_loader — никакого configparser.
 # Не знает ничего про данные компании — это зона ответственности DataIO.
 
 from __future__ import annotations
 
-import configparser
 import json
+import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from sqlalchemy import create_engine, text
 
 try:
-    from .logger_config import setup_logger
-except ImportError:
     from logger_config import setup_logger
+except ImportError:
+    from ..logger_config import setup_logger
 
 logger = setup_logger(__name__)
 
-_CONFIG_PATH = Path(__file__).parent / "config.ini"
-
-# UUID типов метаданных — должны совпадать с init_db.sql
-_META_SOURCE_INFO  = "11111111-1111-1111-1111-111111111111"
-_META_GEN_CONFIG   = "22222222-2222-2222-2222-222222222222"
-_META_PRIVACY      = "33333333-3333-3333-3333-333333333333"
-_META_UTILITY      = "44444444-4444-4444-4444-444444444444"
+# UUID типов метаданных — должны совпадать с db/init_db.sql
+_META_SOURCE_INFO = "11111111-1111-1111-1111-111111111111"
+_META_GEN_CONFIG  = "22222222-2222-2222-2222-222222222222"
+_META_PRIVACY     = "33333333-3333-3333-3333-333333333333"
+_META_UTILITY     = "44444444-4444-4444-4444-444444444444"
 
 
 class ProcessRegistry:
@@ -38,31 +34,37 @@ class ProcessRegistry:
     Реестр процессов синтеза данных.
 
     Отвечает за:
-      - создание и обновление записей о процессах в таблице processes
-      - хранение структурированных метаданных в process_metadata (JSONB)
-      - сохранение логов выполнения в process_logs
-      - предоставление удобных методов для типовых операций с метаданными
+      - создание и обновление записей о процессах (таблица processes)
+      - хранение структурированных метаданных (таблица process_metadata, JSONB)
+      - сохранение логов выполнения (таблица process_logs)
 
-    Конфигурируется через секцию [DATABASE] в config.ini.
+    Принимает AppConfig из config_loader — секция database.
 
     Пример использования:
-        registry = ProcessRegistry()
-        pid = registry.start_process(source_info="adult.csv")
-        registry.save_source_info(pid, {"num_rows": 30000, "columns": [...]})
-        registry.save_generator_config(pid, {"epsilon": 3.0, ...})
-        registry.finish_process(pid, status="SUCCESS", synth_location="data/synth.csv")
-        registry.save_log(pid, log_content)
+        cfg = load_config("configs/adult.yaml")
+        registry = ProcessRegistry(app_config=cfg)
+        if registry.test_connection():
+            registry.start_process(pid, source_info="adult.csv")
+            ...
+            registry.finish_process(pid, status="SUCCESS")
     """
 
-    def __init__(self, config_path: Optional[str] = None) -> None:
-        cfg_file = Path(config_path) if config_path else _CONFIG_PATH
-        cfg = configparser.ConfigParser()
-        cfg.read(cfg_file)
-
-        db = cfg["DATABASE"]
+    def __init__(self, app_config) -> None:
+        """
+        Параметры:
+            app_config — AppConfig из config_loader.
+                         Использует секцию app_config.database.
+        """
+        if app_config.database is None:
+            raise ValueError(
+                "Секция database: не заполнена в конфиге. "
+                "ProcessRegistry требует подключения к System Storage."
+            )
+        db = app_config.database
+        self._schema = db.schema_name
         self._engine = create_engine(
-            f"postgresql+psycopg2://{db['user']}:{db['password']}"
-            f"@{db['host']}:{db['port']}/{db['dbname']}"
+            f"postgresql+psycopg2://{db.user}:{db.password}"
+            f"@{db.host}:{db.port}/{db.dbname}"
         )
 
     # ─────────────────────────────────────────────
@@ -73,16 +75,14 @@ class ProcessRegistry:
         self,
         process_id: str,
         source_info: str,
-        config_path: str = "config.ini",
+        config_path: str = "configs/adult.yaml",
     ) -> None:
         """
         Регистрирует новый процесс генерации со статусом RUNNING.
-
-        Вызывать в самом начале run_pipeline(), до любых вычислений —
-        чтобы даже упавший процесс остался в реестре.
+        Вызывать в самом начале run_pipeline() — до любых вычислений.
         """
-        sql = text("""
-            INSERT INTO synthetic_data_schema.processes
+        sql = text(f"""
+            INSERT INTO {self._schema}.processes
                 (process_id, start_time, status, source_data_info, config_rout)
             VALUES (:pid, :start_ts, 'RUNNING', :src_info, :cfg)
         """)
@@ -110,8 +110,8 @@ class ProcessRegistry:
             synth_location  — путь/таблица где лежит синтетика
             report_location — путь к JSON-отчёту
         """
-        sql = text("""
-            UPDATE synthetic_data_schema.processes
+        sql = text(f"""
+            UPDATE {self._schema}.processes
             SET end_time = :end_ts,
                 status = :status,
                 synthetic_data_location = :synth_loc,
@@ -129,35 +129,23 @@ class ProcessRegistry:
         logger.info(f"[ProcessRegistry] Процесс завершён: {process_id} → {status}")
 
     # ─────────────────────────────────────────────
-    # Метаданные — типовые методы для каждого этапа
+    # Метаданные
     # ─────────────────────────────────────────────
 
     def save_source_info(self, process_id: str, info: Dict[str, Any]) -> None:
-        """
-        Сохраняет описание исходного датасета.
-        Типичное содержимое: num_rows, columns, source_path, dtypes.
-        """
+        """Сохраняет описание исходного датасета."""
         self._insert_metadata(process_id, _META_SOURCE_INFO, info)
 
     def save_generator_config(self, process_id: str, config: Dict[str, Any]) -> None:
-        """
-        Сохраняет конфигурацию генератора и DP-параметры.
-        Типичное содержимое: epsilon, sigma, batch_size, epochs, is_dp_enabled.
-        """
+        """Сохраняет конфигурацию генератора и DP-параметры."""
         self._insert_metadata(process_id, _META_GEN_CONFIG, config)
 
     def save_privacy_report(self, process_id: str, report: Dict[str, Any]) -> None:
-        """
-        Сохраняет результаты оценки приватности.
-        Типичное содержимое: MIA AUC, DCR, k/l/t, spent_epsilon.
-        """
+        """Сохраняет результаты оценки приватности."""
         self._insert_metadata(process_id, _META_PRIVACY, report)
 
     def save_utility_report(self, process_id: str, report: Dict[str, Any]) -> None:
-        """
-        Сохраняет результаты оценки полезности.
-        Типичное содержимое: TSTR F1, TRTR F1, utility_loss, JSD.
-        """
+        """Сохраняет результаты оценки полезности."""
         self._insert_metadata(process_id, _META_UTILITY, report)
 
     def save_metadata(
@@ -166,10 +154,7 @@ class ProcessRegistry:
         metadata_type_id: str,
         value: Dict[str, Any],
     ) -> None:
-        """
-        Универсальный метод для сохранения произвольных метаданных.
-        Используй типовые методы выше когда возможно — они читабельнее.
-        """
+        """Универсальный метод для произвольных метаданных."""
         self._insert_metadata(process_id, metadata_type_id, value)
 
     # ─────────────────────────────────────────────
@@ -179,44 +164,32 @@ class ProcessRegistry:
     def save_log(self, process_id: str, log_content: str) -> None:
         """
         Сохраняет содержимое лог-файла процесса в БД.
-
-        Вызывать после завершения процесса, передав содержимое файла
-        из logs/app.log (или другого пути из конфига).
         Автоматически связывает лог с процессом через log_id.
         """
-        import uuid
         log_id = str(uuid.uuid4())
-
         with self._engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO synthetic_data_schema.process_logs
+            conn.execute(text(f"""
+                INSERT INTO {self._schema}.process_logs
                     (log_id, log_content, created_at)
                 VALUES (:lid, :content, NOW())
             """), {"lid": log_id, "content": log_content})
 
-            conn.execute(text("""
-                UPDATE synthetic_data_schema.processes
+            conn.execute(text(f"""
+                UPDATE {self._schema}.processes
                 SET log_id = :lid
                 WHERE process_id = :pid
             """), {"lid": log_id, "pid": process_id})
 
-        logger.info(
-            f"[ProcessRegistry] Лог сохранён: {log_id} → процесс {process_id}"
-        )
+        logger.info(f"[ProcessRegistry] Лог сохранён: {log_id} → процесс {process_id}")
 
     def save_log_from_file(self, process_id: str, log_path: str) -> None:
-        """
-        Читает лог-файл и сохраняет его содержимое в БД.
-        Удобный вариант save_log() когда лог пишется в файл.
-        """
+        """Читает лог-файл и сохраняет его содержимое в БД."""
+        from pathlib import Path
         path = Path(log_path)
         if not path.exists():
-            logger.warning(
-                f"[ProcessRegistry] Лог-файл не найден: {log_path}. Пропускаем."
-            )
+            logger.warning(f"[ProcessRegistry] Лог-файл не найден: {log_path}")
             return
-        log_content = path.read_text(encoding="utf-8")
-        self.save_log(process_id, log_content)
+        self.save_log(process_id, path.read_text(encoding="utf-8"))
 
     # ─────────────────────────────────────────────
     # Утилиты
@@ -230,7 +203,7 @@ class ProcessRegistry:
             logger.info("[ProcessRegistry] Подключение к System Storage успешно")
             return True
         except Exception as e:
-            logger.error(f"[ProcessRegistry] Ошибка подключения к System Storage: {e}")
+            logger.error(f"[ProcessRegistry] Ошибка подключения: {e}")
             return False
 
     def close(self) -> None:
@@ -244,9 +217,8 @@ class ProcessRegistry:
         metadata_type_id: str,
         value: Dict[str, Any],
     ) -> None:
-        """Вставляет запись в process_metadata."""
-        sql = text("""
-            INSERT INTO synthetic_data_schema.process_metadata
+        sql = text(f"""
+            INSERT INTO {self._schema}.process_metadata
                 (process_id, metadata_type_id, metadata_value, created_at)
             VALUES (:pid, :mtid, :mval, NOW())
         """)

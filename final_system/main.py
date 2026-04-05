@@ -20,8 +20,8 @@ from evaluator.utility.utility_evaluator import UtilityConfig, UtilityEvaluator
 from reporter.reporter import Reporter, VerdictThresholds
 from registry.process_registry import ProcessRegistry
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
+from logger_config import setup_logger
+logger = setup_logger(__name__)
 
 
 def run_pipeline(
@@ -143,7 +143,7 @@ def run_pipeline(
             dp_report=dp_report,
         )
         if registry is not None:
-            registry.save_privacy_report(process_id, _flatten_for_db(privacy_report))
+            registry.save_privacy_report(process_id, _flatten_privacy_for_db(privacy_report))
 
         # 6. Оценка полезности
         logger.info("[Pipeline] Оценка полезности...")
@@ -154,7 +154,7 @@ def run_pipeline(
             real_test_df=real_holdout,
         )
         if registry is not None:
-            registry.save_utility_report(process_id, _flatten_for_db(utility_report))
+            registry.save_utility_report(process_id, _flatten_privacy_for_db(utility_report))
 
         # 7. Сборка отчёта
         reporter = Reporter(thresholds=thresholds or VerdictThresholds())
@@ -195,38 +195,71 @@ def run_pipeline(
         raise
 
 
-def _flatten_for_db(report: Dict[str, Any]) -> Dict[str, Any]:
+def _flatten_privacy_for_db(privacy_report: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Упрощает вложенный отчёт до плоского словаря для хранения в БД.
-    Оставляет только ключевые числовые метрики без вложенных историй и списков.
+    Извлекает ключевые метрики из privacy_report для хранения в БД.
+
+    Структура privacy_report (из PrivacyEvaluator.evaluate()):
+        empirical_risk.membership_inference.attack_auc
+        empirical_risk.distance_metrics.dcr.privacy_preserved
+        empirical_risk.distance_metrics.dcr.synth_to_real.median
+        empirical_risk.distance_metrics.dcr.holdout_to_real.median
+        dp_guarantees.spent_epsilon_final
+        dp_guarantees.epochs_completed
+        diagnostic.classical.k_anonymity / l_diversity / t_closeness
     """
     result = {}
     try:
-        emp = report.get("empirical_risk") or {}
-        mia = emp.get("membership_inference") or {}
-        dcr = (emp.get("distance_metrics") or {}).get("dcr") or {}
-        result["mia_auc"]               = mia.get("attack_auc")
-        result["dcr_privacy_preserved"] = dcr.get("privacy_preserved")
-        result["dcr_synth_median"]      = (dcr.get("synth_to_real") or {}).get("median")
-        result["dcr_holdout_median"]    = (dcr.get("holdout_to_real") or {}).get("median")
+        emp = privacy_report.get("empirical_risk") or {}
 
-        dp = report.get("dp_guarantees") or {}
-        result["spent_epsilon"]    = dp.get("spent_epsilon_final")
+        mia = emp.get("membership_inference") or {}
+        result["mia_auc"] = mia.get("attack_auc")
+
+        dcr = (emp.get("distance_metrics") or {}).get("dcr") or {}
+        result["dcr_privacy_preserved"] = dcr.get("privacy_preserved")
+        result["dcr_synth_median"] = (dcr.get("synth_to_real") or {}).get("median")
+        result["dcr_holdout_median"] = (dcr.get("holdout_to_real") or {}).get("median")
+
+        dp = privacy_report.get("dp_guarantees") or {}
+        result["spent_epsilon"] = dp.get("spent_epsilon_final")
         result["epochs_completed"] = dp.get("epochs_completed")
 
-        klt = (report.get("diagnostic") or {}).get("classical") or {}
+        klt = (privacy_report.get("diagnostic") or {}).get("classical") or {}
         result["k_anonymity"] = klt.get("k_anonymity")
         result["l_diversity"] = klt.get("l_diversity")
         result["t_closeness"] = klt.get("t_closeness")
 
-        ml = report.get("ml_efficacy") or {}
-        result["trtr_f1"]      = (ml.get("trtr") or {}).get("f1_weighted")
-        result["tstr_f1"]      = (ml.get("tstr") or {}).get("f1_weighted")
+    except Exception:
+        logger.warning("[Pipeline] Не удалось сформировать privacy_flat для БД")
+    return result
+
+
+def _flatten_utility_for_db(utility_report: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Извлекает ключевые метрики из utility_report для хранения в БД.
+
+    Структура utility_report (из UtilityEvaluator.evaluate()):
+        ml_efficacy.trtr.f1_weighted
+        ml_efficacy.tstr.f1_weighted
+        ml_efficacy.utility_loss.value
+        statistical.summary.mean_jsd
+        statistical.summary.mean_tvd
+        correlations.pearson_corr_mae
+    """
+    result = {}
+    try:
+        ml = utility_report.get("ml_efficacy") or {}
+        result["trtr_f1"] = (ml.get("trtr") or {}).get("f1_weighted")
+        result["tstr_f1"] = (ml.get("tstr") or {}).get("f1_weighted")
         result["utility_loss"] = (ml.get("utility_loss") or {}).get("value")
 
-        stat = report.get("statistical") or {}
+        stat = utility_report.get("statistical") or {}
         result["mean_jsd"] = (stat.get("summary") or {}).get("mean_jsd")
         result["mean_tvd"] = (stat.get("summary") or {}).get("mean_tvd")
+
+        corr = utility_report.get("correlations") or {}
+        result["pearson_corr_mae"] = corr.get("pearson_corr_mae")
+
     except Exception:
-        pass
+        logger.warning("[Pipeline] Не удалось сформировать utility_flat для БД")
     return result
