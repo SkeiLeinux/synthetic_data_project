@@ -60,7 +60,6 @@ class DataProcessor:
     Методы:
         preprocess()           — очистка: дубликаты, пропуски
         detect_column_types()  — автоматическая разбивка колонок по типам
-        generalize_qi()        — добавляет bin-колонки для k/l/t диагностики
         drop_columns()         — удаляет колонки по списку
         get()                  — возвращает текущий датафрейм
     """
@@ -190,46 +189,6 @@ class DataProcessor:
             logger.info(f"[Processor] Игнорируются: {schema.ignored}")
 
         return schema
-
-    def generalize_qi(self) -> pd.DataFrame:
-        """
-        Добавляет обобщённые (bin) колонки для квазиидентификаторов.
-        Используется для диагностики k/l/t-анонимности в privacy_evaluator.
-
-        Добавляемые колонки (если исходная колонка есть в датафрейме):
-            age           → age_bin:    ['<=30', '31-60', '61+']
-            education-num → edu_bin:    ['low' (<=10), 'high' (>10)]
-            marital-status→ marital_bin:['married', 'not-married']
-            race          → race_bin:   ['White', 'Non-White']
-
-        Исходные колонки НЕ удаляются — передавать в CTGAN их список
-        или убирать через drop_columns() в зависимости от задачи.
-        """
-        df = self.df
-
-        if "age" in df.columns:
-            df["age"] = pd.to_numeric(df["age"], errors="coerce")
-            df["age_bin"] = pd.cut(
-                df["age"], bins=[0, 30, 60, 100], labels=["<=30", "31-60", "61+"]
-            ).astype(str)
-
-        if "education-num" in df.columns:
-            df["education-num"] = pd.to_numeric(df["education-num"], errors="coerce")
-            df["edu_bin"] = df["education-num"].apply(
-                lambda x: "low" if x <= 10 else "high"
-            ).astype(str)
-
-        if "marital-status" in df.columns:
-            df["marital_bin"] = df["marital-status"].apply(
-                lambda x: "married" if "Married" in str(x) else "not-married"
-            ).astype(str)
-
-        if "race" in df.columns:
-            df["race_bin"] = df["race"].apply(
-                lambda x: x if x == "White" else "Non-White"
-            ).astype(str)
-
-        return self.df
 
     def drop_columns(self, columns: List[str]) -> pd.DataFrame:
         """Удаляет указанные колонки (если они есть). Игнорирует отсутствующие."""

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pandas as pd
 
-from main import run_pipeline
+from pipeline import run_pipeline
 from data_service.processor import DataProcessor
 from synthesizer.dp_ctgan import DPCTGANConfig
 from evaluator.privacy.privacy_evaluator import PrivacyConfig

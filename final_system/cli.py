@@ -25,12 +25,10 @@ import pandas as pd
 from config_loader import load_config, apply_quick_test
 from data_service.data_io import DataIO
 from data_service.processor import DataProcessor
-from main import run_pipeline
+from pipeline import run_pipeline
 
 from registry.process_registry import ProcessRegistry
-
-# logging.basicConfig убран — настройка через logger_config.setup_logger()
-from logger_config import setup_logger
+from logger_config import setup_logger, reconfigure_file_handler
 logger = setup_logger(__name__)
 
 
@@ -109,6 +107,12 @@ def main() -> None:
         _print_config_summary(cfg)
         sys.exit(0)
 
+    # ── Перенастройка пути к лог-файлу из конфига ────────────────────────────
+    log_path = str(
+        Path(os.path.dirname(os.path.abspath(__file__))) / cfg.paths.logs
+    )
+    reconfigure_file_handler(log_path)
+
     # ── Загрузка данных ───────────────────────────────────────────────────────
     data_path = Path(cfg.pipeline.data_path)
     if not data_path.exists():
@@ -176,35 +180,41 @@ def main() -> None:
         f"n_synth_rows={n_synth_rows}"
     )
 
-    # ── Запуск пайплайна ──────────────────────────────────────────────────────
-    log_path = str(
-        Path(os.path.dirname(os.path.abspath(__file__))) / cfg.paths.logs
-    )
     output_dir = str(
         Path(os.path.dirname(os.path.abspath(__file__))) / cfg.paths.output_dir
     )
 
-    synth_df, report = run_pipeline(
-        real_df=df,
-        synth_config=cfg.get_generator_config(),
-        privacy_config=cfg.get_privacy_config(),
-        utility_config=cfg.get_utility_config(),
-        categorical_columns=categorical_cols,
-        continuous_columns=continuous_cols,
-        n_synth_rows=n_synth_rows,
-        dataset_name=cfg.pipeline.dataset_name,
-        output_dir=output_dir,
-        thresholds=cfg.get_thresholds(),
-        run_preprocessing=cfg.pipeline.run_preprocessing,
-        holdout_size=cfg.pipeline.holdout_size,
-        random_state=cfg.pipeline.random_state,
-        source_info=str(data_path),
-        registry=registry,
-        log_path=log_path if registry else None,
-    )
+    # ── Пути вывода ───────────────────────────────────────────────────────────
+    synth_out = data_path.parent / f"{data_path.stem}_synth.csv"
+
+    # ── Запуск пайплайна ──────────────────────────────────────────────────────
+    try:
+        synth_df, report = run_pipeline(
+            real_df=df,
+            synth_config=cfg.get_generator_config(),
+            privacy_config=cfg.get_privacy_config(),
+            utility_config=cfg.get_utility_config(),
+            categorical_columns=categorical_cols,
+            continuous_columns=continuous_cols,
+            n_synth_rows=n_synth_rows,
+            dataset_name=cfg.pipeline.dataset_name,
+            output_dir=output_dir,
+            thresholds=cfg.get_thresholds(),
+            run_preprocessing=cfg.pipeline.run_preprocessing,
+            holdout_size=cfg.pipeline.holdout_size,
+            random_state=cfg.pipeline.random_state,
+            source_info=str(data_path),
+            registry=registry,
+            log_path=log_path if registry else None,
+            config_path=args.config,
+            synth_output_path=str(synth_out),
+        )
+    finally:
+        io.close()
+        if registry is not None:
+            registry.close()
 
     # ── Сохранение синтетики ──────────────────────────────────────────────────
-    synth_out = data_path.parent / f"{data_path.stem}_synth.csv"
     synth_df.to_csv(synth_out, index=False)
 
     # ── Итоговый вывод ────────────────────────────────────────────────────────

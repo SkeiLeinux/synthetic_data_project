@@ -96,7 +96,7 @@ def _compute_min_distances_to_synth(
     return min_dists
 
 
-def run_membership_inference(
+def evaluate_membership_inference(
     real_train_df: pd.DataFrame,
     real_holdout_df: pd.DataFrame,
     synth_df: pd.DataFrame,

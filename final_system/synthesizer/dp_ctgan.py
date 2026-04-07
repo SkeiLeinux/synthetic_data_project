@@ -173,6 +173,7 @@ class DPCTGANGenerator:
         self._spent_epsilon: Optional[float] = None
         self._spent_delta: Optional[float] = None
         self._epochs_completed: Optional[int] = None
+        self._epochs_estimated_max: Optional[int] = None  # результат estimate_max_epochs()
         self._best_alpha: Optional[float] = None
         self._eps_history: List[Tuple[int, float]] = []
         self._sample_size: Optional[int] = None
@@ -287,7 +288,6 @@ class DPCTGANGenerator:
         # способ получить spent epsilon -- распарсить stdout.
         # ВАЖНО: требует verbose=True в конфиге, иначе SmartNoise ничего не печатает.
         captured_output = io.StringIO()
-        captured_output = io.StringIO()
         tee = _ProgressTeeStream(captured_output, total_epochs=self.config.epochs)
         try:
             with contextlib.redirect_stdout(tee):
@@ -399,6 +399,7 @@ class DPCTGANGenerator:
                 "spent_delta_final": self._spent_delta,
                 "best_alpha_final": self._best_alpha,
                 "epochs_requested": self.config.epochs,
+                "epochs_estimated_max": self._epochs_estimated_max,
                 "epochs_completed": self._epochs_completed,
                 "eps_per_epoch_history": self._eps_history,
             },
@@ -449,7 +450,7 @@ class DPCTGANGenerator:
         delta = self._delta_used or (1.0 / (n_rows * np.sqrt(n_rows)))
 
         try:
-            # Создаём облегчённый probe-синтезатор: минимальные эпохи, без GPU.
+            # Создаём облегчённый probe-синтезатор: минимальные эпохи.
             # verbose=True обязателен -- иначе stdout пустой и парсить нечего.
             probe_synth = Synthesizer.create(
                 "dpctgan",
@@ -460,7 +461,7 @@ class DPCTGANGenerator:
                 epochs=probe_epochs,
                 batch_size=int(self.config.batch_size),
                 verbose=True,
-                cuda=True,
+                cuda=bool(self.config.cuda),
             )
             # Перехватываем stdout по той же схеме, что и в fit() --
             # probe_synth тоже не хранит privacy_engine после обучения
@@ -494,6 +495,7 @@ class DPCTGANGenerator:
             f"[estimate_max_epochs] probe spent={spent_probe:.4f} за {probe_epochs} эпох, "
             f"ε/epoch≈{eps_per_epoch:.4f}, оценка max_epochs≈{estimated}"
         )
+        self._epochs_estimated_max = estimated
         return estimated
 
     def save(self, path: str) -> None:
@@ -513,10 +515,11 @@ class DPCTGANGenerator:
             "epsilon_target_after_preprocess": self._epsilon_target_after_preprocess,
             "spent_epsilon": self._spent_epsilon,
             "spent_delta": self._spent_delta,
-            "best_alpha": self._best_alpha,  # ← добавить
-            "eps_history": self._eps_history,  # ← добавить
+            "best_alpha": self._best_alpha,
+            "eps_history": self._eps_history,
             "delta_used": self._delta_used,
             "epochs_completed": self._epochs_completed,
+            "epochs_estimated_max": self._epochs_estimated_max,
             "sample_size": self._sample_size,
             "fit_duration_sec": self._fit_duration_sec,
             "synth": self._synth,
@@ -551,6 +554,7 @@ class DPCTGANGenerator:
         obj._eps_history = payload.get("eps_history", [])
         obj._delta_used = payload.get("delta_used")
         obj._epochs_completed = payload.get("epochs_completed")
+        obj._epochs_estimated_max = payload.get("epochs_estimated_max")
         obj._sample_size = payload.get("sample_size")
         obj._fit_duration_sec = payload.get("fit_duration_sec")
         obj._synth = payload["synth"]

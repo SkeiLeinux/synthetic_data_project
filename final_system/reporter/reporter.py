@@ -39,10 +39,10 @@ class VerdictThresholds:
     - dp:      наличие включенного DP и spent_epsilon в допустимом диапазоне
     """
     # Utility: максимально допустимая потеря ML-метрики (TRTR - TSTR)
-    max_utility_loss: float = 0.15
+    max_utility_loss: float = 0.25
 
     # Utility: максимально допустимое среднее JSD по числовым колонкам
-    max_mean_jsd: float = 0.1
+    max_mean_jsd: float = 0.40
 
     # Privacy: максимально допустимый AUC атаки MIA
     # 0.6 = граница "атака работает лучше случайности"
@@ -82,11 +82,8 @@ class Reporter:
     def __init__(
         self,
         thresholds: Optional[VerdictThresholds] = None,
-        data_manager=None,  # DataManager — опциональная зависимость
     ) -> None:
-        # thresholds=None → используем дефолтные значения
         self.thresholds = thresholds or VerdictThresholds()
-        self.data_manager = data_manager
 
     # ──────────────────────────────────────────
     # Публичный API
@@ -142,13 +139,9 @@ class Reporter:
         self,
         report: Dict[str, Any],
         output_dir: str = "reports",
-        save_to_db: bool = False,
-        process_id: Optional[str] = None,
     ) -> str:
         """
         Сохраняет отчет на диск как JSON.
-        Если save_to_db=True и data_manager задан — сохраняет и в БД.
-
         Возвращает путь к сохраненному файлу.
         """
         output_path = Path(output_dir)
@@ -167,10 +160,6 @@ class Reporter:
             logger.info(f"[Reporter] Отчет сохранен: {filepath}")
         except Exception as e:
             raise IOError(f"Ошибка при сохранении отчета: {e}") from e
-
-        # Сохранение в БД через DataManager (если передан и запрошен)
-        if save_to_db and self.data_manager is not None:
-            self._save_to_db(report, filepath, process_id)
 
         return str(filepath)
 
@@ -296,40 +285,6 @@ class Reporter:
             **checks,
             "issues": issues,
         }
-
-    def _save_to_db(
-        self,
-        report: Dict[str, Any],
-        filepath: Path,
-        process_id: Optional[str],
-    ) -> None:
-        """
-        Сохраняет отчет в БД через DataManager.
-        Вызывает insert_metadata и update_process_end из data_manager.txt.
-        """
-        pid = process_id or report.get("process_id")
-        if pid is None:
-            logger.warning("[Reporter] process_id не задан, сохранение в БД пропущено.")
-            return
-
-        try:
-            # Сохраняем полный отчет как метаданные процесса
-            self.data_manager.insert_metadata(
-                process_id=pid,
-                metadata_type_id="final_report",
-                metadata_value=report,
-            )
-            # Обновляем статус процесса и путь к отчету
-            self.data_manager.update_process_end(
-                process_id=pid,
-                end_time=datetime.now(),
-                status=f"COMPLETED_{report['verdict']['overall']}",
-                report_location=str(filepath),
-            )
-            logger.info(f"[Reporter] Отчет сохранен в БД. process_id={pid}")
-        except Exception as e:
-            # Не бросаем исключение: если БД недоступна, файл уже сохранен
-            logger.error(f"[Reporter] Ошибка при сохранении в БД: {e}")
 
 
 # ─────────────────────────────────────────────

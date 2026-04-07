@@ -26,7 +26,7 @@ from typing import Dict, List, Literal, Optional
 import pandas as pd
 
 from .statistical import compute_correlation_delta, compute_marginal_stats
-from .ml_efficacy import MLEfficacyConfig, run_tstr
+from .ml_efficacy import MLEfficacyConfig, evaluate_ml_efficacy
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class UtilityEvaluator:
                 random_state=self.config.random_state,
                 drop_columns=self.config.drop_columns,
             )
-            report["ml_efficacy"] = run_tstr(
+            report["ml_efficacy"] = evaluate_ml_efficacy(
                 real_train_df=real_train_df,
                 synth_df=synth_df,
                 real_test_df=real_test_df,

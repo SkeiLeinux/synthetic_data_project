@@ -63,3 +63,29 @@ def setup_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.propagate = True  # передавать записи корневому логгеру
     return logger
+
+
+def reconfigure_file_handler(log_path: str) -> None:
+    """
+    Заменяет файловый обработчик корневого логгера.
+
+    Вызывать из cli.py после загрузки конфига, чтобы путь к файлу лога
+    соответствовал значению paths.logs из YAML, а не захардкоженному пути.
+    Сообщения до вызова этой функции (во время загрузки конфига) пишутся
+    в дефолтный logs/app.log — это нормально.
+
+    Использование:
+        cfg = load_config(args.config)
+        reconfigure_file_handler(str(Path(...) / cfg.paths.logs))
+    """
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        if isinstance(handler, logging.FileHandler):
+            handler.close()
+            root.removeHandler(handler)
+
+    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+    new_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    new_handler.setLevel(logging.DEBUG)
+    new_handler.setFormatter(_FORMATTER)
+    root.addHandler(new_handler)

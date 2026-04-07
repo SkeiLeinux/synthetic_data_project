@@ -32,7 +32,7 @@ import pandas as pd
 
 from .classical import compute_classical_metrics
 from .distance_metrics import compute_distance_metrics
-from .attack_simulation import run_membership_inference
+from .attack_simulation import evaluate_membership_inference
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class PrivacyEvaluator:
         # Proxy Membership Inference Attack (distance-based)
         if self.config.compute_mia:
             logger.info("[PrivacyEvaluator] Запускаем proxy MIA...")
-            report["empirical_risk"]["membership_inference"] = run_membership_inference(
+            report["empirical_risk"]["membership_inference"] = evaluate_membership_inference(
                 real_train_df=real_train_df,
                 real_holdout_df=real_holdout_df,
                 synth_df=synth_df,

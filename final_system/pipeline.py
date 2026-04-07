@@ -1,4 +1,4 @@
-# final_system/main.py
+# final_system/pipeline.py
 #
 # Orchestrator / Pipeline Service на архитектурной диаграмме.
 # Сквозной пайплайн: предобработка → разделение → генерация → оценка → отчёт.
@@ -41,6 +41,8 @@ def run_pipeline(
     source_info: str = "unknown",
     registry: Optional[ProcessRegistry] = None,
     log_path: Optional[str] = None,
+    config_path: str = "configs/adult.yaml",
+    synth_output_path: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Сквозной пайплайн: предобработка → разделение → генерация → оценка → отчёт.
@@ -57,9 +59,11 @@ def run_pipeline(
         8. Сохранение результатов в реестр (если registry передан)
 
     Параметры:
-        source_info   — описание источника данных для записи в реестр
-        registry      — экземпляр ProcessRegistry; если None — БД не используется
-        log_path      — путь к лог-файлу для сохранения в реестр после завершения
+        source_info      — описание источника данных для записи в реестр
+        registry         — экземпляр ProcessRegistry; если None — БД не используется
+        log_path         — путь к лог-файлу для сохранения в реестр после завершения
+        config_path      — путь к конфиг-файлу для записи в реестр
+        synth_output_path — путь к файлу сохранённой синтетики для записи в реестр
 
     Возвращает:
         synth_df — сгенерированный датафрейм
@@ -72,6 +76,7 @@ def run_pipeline(
         registry.start_process(
             process_id=process_id,
             source_info=source_info,
+            config_path=config_path,
         )
         registry.save_source_info(process_id, {
             "num_rows": len(real_df),
@@ -111,8 +116,31 @@ def run_pipeline(
         if extra_cols:
             logger.info(f"[Pipeline] Колонки вне схемы, удаляются перед генератором: {extra_cols}")
             real_train = real_train.drop(columns=extra_cols)
+            real_holdout = real_holdout.drop(
+                columns=[c for c in extra_cols if c in real_holdout.columns]
+            )
 
         generator = DPCTGANGenerator(synth_config)
+
+        # Предварительная оценка бюджета через dry run.
+        # Линейная экстраполяция занижает результат из-за нелинейности RDP —
+        # используем как нижнюю оценку; SmartNoise всё равно остановится сам.
+        if not synth_config.disabled_dp:
+            logger.info("[Pipeline] Предварительная оценка бюджета (dry run, 5 эпох)...")
+            estimated_max = generator.estimate_max_epochs(real_train, probe_epochs=5)
+            if estimated_max is not None:
+                if estimated_max < synth_config.epochs:
+                    logger.warning(
+                        f"[Pipeline] Оценка: бюджет ε={synth_config.epsilon} исчерпается "
+                        f"~на эпохе {estimated_max} (запрошено {synth_config.epochs}). "
+                        f"SmartNoise остановится автоматически — это ожидаемо."
+                    )
+                else:
+                    logger.info(
+                        f"[Pipeline] Оценка: бюджет покрывает все {synth_config.epochs} эпох "
+                        f"(max≈{estimated_max})."
+                    )
+
         generator.fit(
             real_train,
             categorical_columns=categorical_columns,
@@ -143,7 +171,7 @@ def run_pipeline(
             dp_report=dp_report,
         )
         if registry is not None:
-            registry.save_privacy_report(process_id, _flatten_privacy_for_db(privacy_report))
+            registry.save_privacy_report(process_id, _serialize_privacy_metrics(privacy_report))
 
         # 6. Оценка полезности
         logger.info("[Pipeline] Оценка полезности...")
@@ -154,7 +182,7 @@ def run_pipeline(
             real_test_df=real_holdout,
         )
         if registry is not None:
-            registry.save_utility_report(process_id, _flatten_privacy_for_db(utility_report))
+            registry.save_utility_report(process_id, _serialize_utility_metrics(utility_report))
 
         # 7. Сборка отчёта
         reporter = Reporter(thresholds=thresholds or VerdictThresholds())
@@ -179,6 +207,7 @@ def run_pipeline(
             registry.finish_process(
                 process_id=process_id,
                 status=f"COMPLETED_{verdict['overall']}",
+                synth_location=synth_output_path,
                 report_location=filepath,
             )
             if log_path:
@@ -195,7 +224,7 @@ def run_pipeline(
         raise
 
 
-def _flatten_privacy_for_db(privacy_report: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize_privacy_metrics(privacy_report: Dict[str, Any]) -> Dict[str, Any]:
     """
     Извлекает ключевые метрики из privacy_report для хранения в БД.
 
@@ -234,7 +263,7 @@ def _flatten_privacy_for_db(privacy_report: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _flatten_utility_for_db(utility_report: Dict[str, Any]) -> Dict[str, Any]:
+def _serialize_utility_metrics(utility_report: Dict[str, Any]) -> Dict[str, Any]:
     """
     Извлекает ключевые метрики из utility_report для хранения в БД.
 

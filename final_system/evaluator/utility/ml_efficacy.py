@@ -85,11 +85,15 @@ def _prepare_features(
         X_train[col] = le.transform(X_train[col].astype(str))
         X_test[col] = le.transform(X_test[col].astype(str))
 
-    # Заполнение пропусков
+    # Заполнение пропусков: проверяем оба датафрейма.
+    # fill_val всегда берём из X_train, чтобы не допускать утечки test-статистик.
     for col in X_train.columns:
-        if X_train[col].isnull().any():
-            fill_val = X_train[col].median() if X_train[col].dtype in [np.float64, np.int64] \
-                else X_train[col].mode()[0]
+        if X_train[col].isnull().any() or X_test[col].isnull().any():
+            if pd.api.types.is_numeric_dtype(X_train[col]):
+                fill_val = X_train[col].median()
+            else:
+                mode = X_train[col].mode()
+                fill_val = mode[0] if len(mode) > 0 else ""
             X_train[col] = X_train[col].fillna(fill_val)
             X_test[col] = X_test[col].fillna(fill_val)
 
@@ -174,7 +178,7 @@ def _run_single_experiment(
 # Публичная функция
 # ─────────────────────────────────────────────
 
-def run_tstr(
+def evaluate_ml_efficacy(
     real_train_df: pd.DataFrame,
     synth_df: pd.DataFrame,
     real_test_df: pd.DataFrame,

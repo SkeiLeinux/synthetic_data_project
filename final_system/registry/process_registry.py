@@ -9,11 +9,38 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 from sqlalchemy import create_engine, text
+
+
+def _sanitize_json(obj: Any) -> Any:
+    """Рекурсивно заменяет NaN/Inf на None — PostgreSQL JSONB не принимает эти значения."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json(v) for v in obj]
+    return obj
+
+
+def _validate_sql_identifier(name: str) -> str:
+    """
+    Проверяет, что имя схемы/таблицы содержит только безопасные символы.
+    Допускается: буквы, цифры, подчёркивание. Первый символ — буква или подчёркивание.
+    Это предотвращает SQL Injection при подстановке имени схемы в запросы.
+    """
+    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+        raise ValueError(
+            f"Недопустимое имя идентификатора SQL: {name!r}. "
+            f"Разрешены только буквы, цифры и подчёркивание."
+        )
+    return name
 
 try:
     from logger_config import setup_logger
@@ -61,7 +88,7 @@ class ProcessRegistry:
                 "ProcessRegistry требует подключения к System Storage."
             )
         db = app_config.database
-        self._schema = db.schema_name
+        self._schema = _validate_sql_identifier(db.schema_name)
         self._engine = create_engine(
             f"postgresql+psycopg2://{db.user}:{db.password}"
             f"@{db.host}:{db.port}/{db.dbname}"
@@ -226,5 +253,5 @@ class ProcessRegistry:
             conn.execute(sql, {
                 "pid": process_id,
                 "mtid": metadata_type_id,
-                "mval": json.dumps(value),
+                "mval": json.dumps(_sanitize_json(value)),
             })
