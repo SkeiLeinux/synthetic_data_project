@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -189,6 +189,74 @@ class DataProcessor:
             logger.info(f"[Processor] Игнорируются: {schema.ignored}")
 
         return schema
+
+    def minimize(
+        self,
+        direct_identifiers: List[str],
+        drop_high_cardinality: bool = False,
+        cardinality_threshold: float = 0.9,
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Минимизация данных перед синтезом (шаг data minimization по модели ПНСТ).
+
+        Шаги:
+          1. Удалить прямые идентификаторы (direct_identifiers) — id, name, email и т.п.
+          2. Если drop_high_cardinality=True — удалить категориальные колонки (dtype=object
+             или category), у которых доля уникальных значений > cardinality_threshold.
+
+        Количество строк не изменяется — только столбцы.
+        Колонки из direct_identifiers, отсутствующие в DataFrame, молча пропускаются.
+
+        Возвращает:
+            (DataFrame, minimization_report)
+        """
+        rows_before = len(self.df)
+        cols_before = len(self.df.columns)
+        removed_direct: List[str] = []
+        removed_cardinality: List[str] = []
+
+        # 1. Удаление прямых идентификаторов
+        for col in direct_identifiers:
+            if col not in self.df.columns:
+                logger.warning(
+                    f"[Processor] Минимизация: колонка '{col}' не найдена в DataFrame, пропускаем"
+                )
+                continue
+            self.df.drop(columns=[col], inplace=True)
+            removed_direct.append(col)
+            logger.info(f"[Processor] Минимизация: удалён прямой идентификатор '{col}'")
+
+        # 2. Удаление высококардинальных категориальных колонок
+        if drop_high_cardinality:
+            for col in list(self.df.columns):
+                is_object = pd.api.types.is_object_dtype(self.df[col])
+                is_categorical = isinstance(self.df[col].dtype, pd.CategoricalDtype)
+                if not (is_object or is_categorical):
+                    continue
+                ratio = self.df[col].nunique() / len(self.df)
+                if ratio > cardinality_threshold:
+                    self.df.drop(columns=[col], inplace=True)
+                    removed_cardinality.append(col)
+                    logger.info(
+                        f"[Processor] Минимизация: удалена высококардинальная колонка "
+                        f"'{col}' (уникальных: {ratio:.1%} > {cardinality_threshold:.1%})"
+                    )
+
+        cols_after = len(self.df.columns)
+        total_removed = len(removed_direct) + len(removed_cardinality)
+        logger.info(
+            f"[Processor] Минимизация данных: удалено {total_removed} колонок "
+            f"({cols_before} → {cols_after})"
+        )
+
+        report: Dict[str, Any] = {
+            "removed_direct_identifiers": removed_direct,
+            "removed_high_cardinality": removed_cardinality,
+            "columns_before": cols_before,
+            "columns_after": cols_after,
+            "rows_unchanged": len(self.df) == rows_before,
+        }
+        return self.df, report
 
     def drop_columns(self, columns: List[str]) -> pd.DataFrame:
         """Удаляет указанные колонки (если они есть). Игнорирует отсутствующие."""

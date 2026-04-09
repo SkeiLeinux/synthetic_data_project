@@ -43,6 +43,10 @@ def run_pipeline(
     log_path: Optional[str] = None,
     config_path: str = "configs/adult.yaml",
     synth_output_path: Optional[str] = None,
+    model_save_path: Optional[str] = None,
+    direct_identifiers: Optional[List[str]] = None,
+    drop_high_cardinality: bool = False,
+    cardinality_threshold: float = 0.9,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Сквозной пайплайн: предобработка → разделение → генерация → оценка → отчёт.
@@ -62,8 +66,12 @@ def run_pipeline(
         source_info      — описание источника данных для записи в реестр
         registry         — экземпляр ProcessRegistry; если None — БД не используется
         log_path         — путь к лог-файлу для сохранения в реестр после завершения
-        config_path      — путь к конфиг-файлу для записи в реестр
-        synth_output_path — путь к файлу сохранённой синтетики для записи в реестр
+        config_path        — путь к конфиг-файлу для записи в реестр
+        synth_output_path  — путь к файлу сохранённой синтетики для записи в реестр
+        model_save_path    — если указан, сохраняет обученный генератор в .pkl после fit()
+        direct_identifiers — прямые идентификаторы для удаления (data minimization)
+        drop_high_cardinality — удалять категориальные колонки с высокой кардинальностью
+        cardinality_threshold — порог доли уникальных значений (по умолчанию 0.9)
 
     Возвращает:
         synth_df — сгенерированный датафрейм
@@ -71,18 +79,13 @@ def run_pipeline(
     """
     process_id = str(uuid.uuid4())
 
-    # 1. Регистрация процесса
+    # 1. Регистрация процесса (только start — source_info сохраняется после минимизации)
     if registry is not None:
         registry.start_process(
             process_id=process_id,
             source_info=source_info,
             config_path=config_path,
         )
-        registry.save_source_info(process_id, {
-            "num_rows": len(real_df),
-            "columns": list(real_df.columns),
-            "source": source_info,
-        })
 
     try:
         # 2. Предобработка
@@ -91,6 +94,24 @@ def run_pipeline(
             processor = DataProcessor(real_df)
             real_df = processor.preprocess()
             logger.info(f"[Pipeline] После предобработки: {real_df.shape}")
+
+        # 2.5. Минимизация данных (data minimization по модели ПНСТ)
+        logger.info("[Pipeline] Минимизация данных...")
+        _min_proc = DataProcessor(real_df)
+        real_df, minimization_report = _min_proc.minimize(
+            direct_identifiers=direct_identifiers or [],
+            drop_high_cardinality=drop_high_cardinality,
+            cardinality_threshold=cardinality_threshold,
+        )
+
+        # Сохраняем source_info вместе с результатами минимизации
+        if registry is not None:
+            registry.save_source_info(process_id, {
+                "num_rows": len(real_df),
+                "columns": list(real_df.columns),
+                "source": source_info,
+                "minimization": minimization_report,
+            })
 
         # 3. Разделение на train и holdout — ДО обучения генератора.
         #    Стратификация по целевому признаку сохраняет баланс классов.
@@ -150,6 +171,12 @@ def run_pipeline(
         dp_report = generator.privacy_report()
         logger.info(f"[Pipeline] Сгенерировано {len(synth_df)} строк.")
 
+        if model_save_path:
+            from pathlib import Path as _Path
+            _Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
+            generator.save(model_save_path)
+            logger.info(f"[Pipeline] Модель сохранена: {model_save_path}")
+
         # Приводим типы синтетики к типам реальных данных
         for col in synth_df.columns:
             if col in real_train.columns:
@@ -190,6 +217,7 @@ def run_pipeline(
             dp_report=dp_report,
             utility_report=utility_report,
             privacy_report=privacy_report,
+            minimization_report=minimization_report,
             dataset_name=dataset_name,
             generator_type="dpctgan",
             process_id=process_id,

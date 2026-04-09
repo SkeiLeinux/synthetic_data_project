@@ -94,6 +94,7 @@ class Reporter:
         dp_report: Optional[Dict[str, Any]],
         utility_report: Optional[Dict[str, Any]],
         privacy_report: Optional[Dict[str, Any]],
+        minimization_report: Optional[Dict[str, Any]] = None,
         dataset_name: str = "unknown",
         generator_type: str = "unknown",
         process_id: Optional[str] = None,
@@ -123,6 +124,9 @@ class Reporter:
             "dataset_name": dataset_name,
             "generator_type": generator_type,
             "verdict": verdict,
+            "data_processing": {
+                "minimization": minimization_report or {},
+            },
             "generator": dp_report,
             "utility": utility_report,
             "privacy": privacy_report,

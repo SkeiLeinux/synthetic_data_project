@@ -246,6 +246,11 @@ class DataSchemaYamlConfig(BaseModel):
     continuous: List[str] = Field(default_factory=list)
     exclude: List[str] = Field(default_factory=list)
 
+    # Параметры минимизации данных (data minimization по модели ПНСТ)
+    direct_identifiers: List[str] = Field(default_factory=list)
+    drop_high_cardinality: bool = False
+    cardinality_threshold: float = 0.9
+
     @property
     def is_auto(self) -> bool:
         """True если схема не задана и нужна автодетекция."""
@@ -366,12 +371,16 @@ def apply_quick_test(cfg: AppConfig) -> AppConfig:
     Возвращает копию конфига с параметрами для быстрого теста.
     Не мутирует исходный объект.
 
+    QUICK_TEST проверяет, что пайплайн проходит end-to-end без падений —
+    не качество синтетики. Поэтому пороги вердикта намеренно ослаблены:
+    50 эпох с DP-шумом не позволяют получить production-качество.
+
     Изменяет:
-      - sample_size = 5000
-      - generator.epochs = 50
-      - generator.cuda = False
-      - privacy.distance_sample_size = 500
-      - privacy.mia_sample_size = 250
+      pipeline:    sample_size = 5000
+      generator:   epochs = 50, cuda = False
+      privacy:     distance_sample_size = 500, mia_sample_size = 250
+      thresholds:  max_utility_loss = 0.40, max_mean_jsd = 0.40,
+                   max_mia_auc = 0.65, max_spent_epsilon = None
     """
     raw = cfg.model_dump()
     raw["pipeline"]["sample_size"] = 5000
@@ -379,6 +388,11 @@ def apply_quick_test(cfg: AppConfig) -> AppConfig:
     raw["generator"]["cuda"] = False
     raw["privacy"]["distance_sample_size"] = 500
     raw["privacy"]["mia_sample_size"] = 250
+    # Пороги вердикта для режима smoke-test: проверяем только отсутствие краша
+    raw["thresholds"]["max_utility_loss"] = 0.40
+    raw["thresholds"]["max_mean_jsd"] = 0.40
+    raw["thresholds"]["max_mia_auc"] = 0.65
+    raw["thresholds"]["max_spent_epsilon"] = None
     return AppConfig.model_validate(raw)
 
 

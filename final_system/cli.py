@@ -42,11 +42,14 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Примеры:
-  python cli.py                              # запуск с configs/adult.yaml
-  python cli.py --config configs/bank.yaml   # другой датасет
-  python cli.py --quick-test                 # быстрый тест (5k строк, 50 эпох)
-  python cli.py --data data/custom.csv       # переопределить путь к данным
-  python cli.py --check                      # только проверить конфиг
+  python cli.py                                        # запуск с configs/adult.yaml
+  python cli.py --config configs/bank.yaml             # другой датасет
+  python cli.py --quick-test                           # быстрый тест (5k строк, 50 эпох)
+  python cli.py --data data/custom.csv                 # переопределить путь к данным
+  python cli.py --check                                # только проверить конфиг
+  python cli.py --save-model models/adult.pkl          # сохранить модель после обучения
+  python cli.py --from-model models/adult.pkl          # генерация без обучения
+  python cli.py --from-model models/adult.pkl --rows 5000  # задать количество строк
         """,
     )
     parser.add_argument(
@@ -75,6 +78,25 @@ def _parse_args() -> argparse.Namespace:
         "--no-db",
         action="store_true",
         help="Запустить без ProcessRegistry (игнорировать секцию [database])",
+    )
+    parser.add_argument(
+        "--save-model",
+        metavar="PATH",
+        default=None,
+        help="Сохранить обученную модель в файл .pkl (например: models/adult.pkl)",
+    )
+    parser.add_argument(
+        "--from-model",
+        metavar="PATH",
+        default=None,
+        help="Загрузить сохранённую модель и сгенерировать синтетику без обучения",
+    )
+    parser.add_argument(
+        "--rows",
+        type=int,
+        metavar="N",
+        default=None,
+        help="Количество строк для генерации (используется вместе с --from-model)",
     )
     return parser.parse_args()
 
@@ -112,6 +134,11 @@ def main() -> None:
         Path(os.path.dirname(os.path.abspath(__file__))) / cfg.paths.logs
     )
     reconfigure_file_handler(log_path)
+
+    # ── Режим генерации из сохранённой модели ─────────────────────────────────
+    if args.from_model:
+        _run_from_model(args, cfg, log_path)
+        return
 
     # ── Загрузка данных ───────────────────────────────────────────────────────
     data_path = Path(cfg.pipeline.data_path)
@@ -208,6 +235,10 @@ def main() -> None:
             log_path=log_path if registry else None,
             config_path=args.config,
             synth_output_path=str(synth_out),
+            model_save_path=args.save_model,
+            direct_identifiers=cfg.data_schema.direct_identifiers,
+            drop_high_cardinality=cfg.data_schema.drop_high_cardinality,
+            cardinality_threshold=cfg.data_schema.cardinality_threshold,
         )
     finally:
         io.close()
@@ -219,6 +250,74 @@ def main() -> None:
 
     # ── Итоговый вывод ────────────────────────────────────────────────────────
     _print_verdict(report, synth_out, output_dir)
+
+
+# ==============================================================================
+# Генерация из сохранённой модели (--from-model)
+# ==============================================================================
+
+def _run_from_model(args, cfg, log_path: str) -> None:
+    """
+    Загружает обученный генератор из .pkl и генерирует синтетику без обучения.
+
+    Не требует реальных данных — использует только сохранённые веса модели.
+    Оценка (privacy/utility) не запускается, отчёт не формируется.
+
+    Использование:
+        python cli.py --from-model models/adult.pkl
+        python cli.py --from-model models/adult.pkl --rows 5000 --data data/adult.csv
+    """
+    from synthesizer.dp_ctgan import DPCTGANGenerator
+
+    model_path = args.from_model
+    if not Path(model_path).exists():
+        logger.error(f"Файл модели не найден: {model_path}")
+        sys.exit(1)
+
+    logger.info(f"Загрузка модели: {model_path}")
+    try:
+        generator = DPCTGANGenerator.load(model_path)
+    except Exception as e:
+        logger.error(f"Не удалось загрузить модель: {e}")
+        sys.exit(1)
+
+    # Количество строк: --rows → конфиг → размер обучающей выборки модели
+    if args.rows and args.rows > 0:
+        n_rows = args.rows
+    elif cfg.pipeline.n_synth_rows > 0:
+        n_rows = cfg.pipeline.n_synth_rows
+    else:
+        # Fallback: столько же, сколько было в обучающей выборке модели
+        n_rows = generator._sample_size or 1000
+    logger.info(f"Генерация {n_rows} строк из сохранённой модели...")
+
+    try:
+        synth_df = generator.sample(n_rows)
+    except Exception as e:
+        logger.error(f"Ошибка при генерации: {e}")
+        sys.exit(1)
+
+    # Путь вывода: рядом с моделью, либо рядом с data_path из конфига
+    if args.data:
+        data_path = Path(args.data)
+        synth_out = data_path.parent / f"{data_path.stem}_synth.csv"
+    else:
+        synth_out = Path(model_path).with_suffix("") .parent / f"{Path(model_path).stem}_synth.csv"
+
+    synth_df.to_csv(synth_out, index=False)
+
+    dp = generator.privacy_report().get("dp_spent", {})
+    print("\n" + "=" * 60)
+    print("  Режим: генерация из сохранённой модели")
+    print("=" * 60)
+    print(f"  Модель:    {model_path}")
+    print(f"  Строк:     {len(synth_df)}")
+    print(f"  Spent ε:   {dp.get('spent_epsilon_final', 'n/a')}")
+    print(f"  Эпох:      {dp.get('epochs_completed', 'n/a')}")
+    print(f"  Синтетика: {synth_out}")
+    print("=" * 60)
+
+    logger.info(f"Синтетика сохранена: {synth_out}")
 
 
 # ==============================================================================
