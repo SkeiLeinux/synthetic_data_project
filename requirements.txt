@@ -22,3 +22,6 @@ opacus~=0.14.0
 sdmetrics~=0.28.0
 PyYAML~=6.0.3
 pydantic~=2.12.5
+fastapi~=0.135.3
+pydantic-settings~=2.13.1
+pytest~=9.0.3
