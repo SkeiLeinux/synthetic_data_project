@@ -130,16 +130,13 @@ def delete_run(
 ) -> None:
     record = _get_or_404(run_id)
 
-    if record.status == RunStatus.running:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "CONFLICT", "message": "Нельзя удалить запуск со статусом running"},
-        )
+    if record.status in (RunStatus.queued, RunStatus.running):
+        # Помечаем как cancelled — запись остаётся, клиент видит финальный статус
+        run_store.update(run_id, status=RunStatus.cancelled,
+                         finished_at=datetime.now(timezone.utc))
+        return
 
-    # Помечаем как cancelled если ещё в очереди
-    if record.status == RunStatus.queued:
-        run_store.update(run_id, status=RunStatus.cancelled)
-
+    # Для завершённых (completed / failed / cancelled) — удаляем физически
     run_store.delete(run_id)
 
 
