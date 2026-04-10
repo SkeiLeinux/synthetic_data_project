@@ -1,6 +1,6 @@
 # Synthetic Data Generation Service
 
-**Сервис генерации полностью синтетических табличных данных с оценкой приватности и полезности**
+**Сервис генерации синтетических табличных данных с оценкой приватности и полезности**
 
 Дипломная работа — НИУ ВШЭ, ФКН, Программная инженерия, 2024–2026.
 
@@ -8,134 +8,124 @@
 
 ## Описание
 
-Система реализует полный пайплайн создания синтетических табличных данных на основе реального датасета. Поддерживаются модели с дифференциальной приватностью (DP-CTGAN, DP-TVAE) и без неё (CTGAN, CopulaGAN). После генерации автоматически вычисляются метрики приватности и полезности, формируется отчёт с агрегированным вердиктом PASS/FAIL/PARTIAL.
+Система реализует полный пайплайн создания синтетических табличных данных с гарантиями дифференциальной приватности (DP-CTGAN на базе SmartNoise Synth). После генерации автоматически вычисляются метрики приватности и полезности, формируется отчёт с агрегированным вердиктом PASS / FAIL / PARTIAL.
 
 **Ключевые возможности:**
-- Генерация синтетических данных на базе SmartNoise Synth с DP-гарантиями (DP-SGD)
-- Полный аудит расхода DP-бюджета (spent epsilon, delta, история по эпохам)
-- Оценка приватности: классические метрики (k/l/t), дистанционные метрики (DCR, NNDR), симуляция атаки MIA
-- Оценка полезности: статистическое сходство (JSD, TVD), сравнение корреляций, ML-эффективность (TSTR/TRTR)
-- Хранение результатов в PostgreSQL + JSON-отчёты на диск
+- Генерация данных с DP-гарантиями (DP-SGD, отслеживание расхода ε/δ-бюджета)
+- Оценка приватности: k/l/t-анонимность, дистанционные метрики DCR/NNDR, симуляция атаки MIA
+- Оценка полезности: статистическое сходство (JSD, TVD), ML-эффективность (TSTR/TRTR)
+- REST API (FastAPI) с документацией Swagger на `/docs`
+- CLI для запуска из командной строки без сервера
+- Сохранение и повторное использование обученных моделей
 
 ---
 
-## Структура репозитория
-
-```
-.
-├── db/
-│   └── init_db.sql                  # Инициализация схемы БД
-├── final_system/
-│   ├── synthesizer/
-│   │   └── dp_ctgan.py              # DP-CTGAN генератор (SmartNoise)
-│   ├── evaluator/
-│   │   ├── privacy/
-│   │   │   ├── classical.py         # k-анонимность, l-разнообразие, t-близость
-│   │   │   ├── distance_metrics.py  # DCR и NNDR метрики
-│   │   │   ├── attack_simulation.py # Симуляция Membership Inference Attack
-│   │   │   └── privacy_evaluator.py # Оркестратор оценки приватности
-│   │   └── utility/
-│   │       ├── statistical.py       # JSD, TVD, дельта корреляций
-│   │       ├── ml_efficacy.py       # TSTR / TRTR
-│   │       └── utility_evaluator.py # Оркестратор оценки полезности
-│   ├── reporter/
-│   │   ├── reporter.py              # Сборка отчёта и вердикта
-│   │   └── reports/                 # Сохранённые JSON-отчёты
-│   ├── archive/                     # Предыдущие версии компонентов (не используются)
-│   ├── data/                        # Датасеты (не включены в репозиторий, см. .gitignore)
-│   ├── logs/                        # Логи запусков
-│   ├── main.py                      # Сквозной пайплайн run_pipeline()
-│   ├── run_adult.py                 # Точка входа — запуск на датасете Adult Census
-│   ├── processor.py                 # Предобработка данных
-│   ├── data_manager.py              # Работа с БД (PostgreSQL через SQLAlchemy)
-│   ├── logger_config.py             # Настройка логгера
-│   ├── config.ini                   # Конфигурация системы
-│   └── metadata.json                # Метаданные SDV для датасета Adult
-├── requirements.txt
-└── README.md
-```
-
----
-
-## Требования
-
-- Python 3.10+
-- PostgreSQL 14+ (для хранения результатов; запуск без БД возможен в упрощённом режиме)
-- CUDA-совместимый GPU (опционально, но значительно ускоряет обучение)
-
-Зависимости Python:
-
-```
-numpy>=1.26,<3.0
-pandas>=2.1,<3.0
-SQLAlchemy>=2.0,<3.0
-psycopg2-binary>=2.9
-smartnoise-synth>=1.0.6
-sdv
-scikit-learn>=1.4,<2.0
-scipy>=1.12
-tqdm
-```
-
-Установка:
+## Установка
 
 ```bash
 pip install -r requirements.txt
 ```
 
+Зависимости: `smartnoise-synth`, `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `torch`, `scikit-learn`, `pandas`, `sqlalchemy`, `psycopg2-binary`.
+
+PostgreSQL необходим только для ProcessRegistry; без него можно запускать с флагом `--no-db`.
+
 ---
 
 ## Быстрый старт
 
-### 1. Инициализация базы данных
-
-```bash
-psql -U postgres -d synthetic_data_db -f db/init_db.sql
-```
-
-### 2. Настройка конфигурации
-**НЕАКТУАЛЬНО**
-
-Отредактируйте `final_system/config.ini`. Основные параметры:
-
-```ini
-[DATABASE]
-host = localhost
-port = 5432
-dbname = synthetic_data_db
-user = postgres
-password = your_password
-
-[GENERATOR]
-# Параметры в JSON-формате, см. DPCTGANConfig в synthesizer/dp_ctgan.py
-
-[PRIVACY]
-# quasi_identifiers, sensitive_attribute и флаги метрик
-
-[UTILITY]
-# target_column и task_type (classification / regression)
-```
-
-### 3. Подготовка данных
-
-Поместите исходный CSV-файл в `final_system/data/`. Пример для датасета Adult Census:
-
-```bash
-# Скачайте adult.csv с UCI ML Repository и положите в final_system/data/
-```
-
-### 4. Запуск пайплайна
+### Запуск REST API
 
 ```bash
 cd final_system
-python run_adult.py
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Для быстрого теста (5k строк, 50 эпох, ~2–3 минуты):
+После запуска:
+- **Swagger UI** — http://localhost:8000/docs
+- **ReDoc** — http://localhost:8000/redoc
+- **OpenAPI JSON** — http://localhost:8000/openapi.json
 
-```python
-# В run_adult.py установите:
-QUICK_TEST = True
+Полная спецификация всех эндпоинтов также доступна в файле `openapi.yaml` в корне репозитория.
+
+#### Аутентификация
+
+По умолчанию авторизация отключена (режим разработки). Чтобы включить:
+
+```bash
+export API_KEY=your-secret-token
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+После этого добавляйте заголовок `Authorization: Bearer your-secret-token` ко всем запросам.
+
+#### Переменные окружения API
+
+| Переменная | Назначение | Дефолт |
+|---|---|---|
+| `API_KEY` | Bearer-токен; если не задан — auth отключена | не задан |
+| `DATA_DIR` | Директория датасетов | `final_system/data/` |
+| `MODELS_DIR` | Директория моделей | `final_system/models/` |
+| `CONFIGS_DIR` | Директория конфигов | `final_system/configs/` |
+| `REPORTS_DIR` | Директория JSON-отчётов | `final_system/reporter/reports/` |
+| `LOG_PATH` | Путь к лог-файлу | `logs/app.log` |
+| `DB_DISABLED` | `true` — не использовать PostgreSQL | `false` |
+
+Поддерживается файл `.env` в директории `final_system/`.
+
+#### Пример: запуск пайплайна через API
+
+```bash
+# 1. Загрузить датасет
+curl -X POST http://localhost:8000/api/v1/datasets \
+  -F "name=adult" -F "file=@data/adult.csv"
+
+# 2. Создать запуск
+curl -X POST http://localhost:8000/api/v1/runs \
+  -H "Content-Type: application/json" \
+  -d '{"dataset_name":"adult","config_name":"adult","save_model":true}'
+
+# 3. Проверить статус (run_id из ответа шага 2)
+curl http://localhost:8000/api/v1/runs/{run_id}
+
+# 4. Скачать синтетику
+curl http://localhost:8000/api/v1/runs/{run_id}/synthetic -o synth.csv
+```
+
+---
+
+### Запуск через CLI
+
+```bash
+cd final_system
+
+# Запуск с дефолтным конфигом (configs/adult.yaml)
+python cli.py
+
+# Указать другой конфиг
+python cli.py --config configs/bank.yaml
+
+# Быстрый тест (50 эпох, 5 000 строк, ~2–3 мин)
+python cli.py --quick-test
+
+# Валидация конфига без запуска
+python cli.py --check
+
+# Запуск без PostgreSQL
+python cli.py --no-db
+
+# Сохранить обученную модель
+python cli.py --save-model models/adult_model.pkl
+
+# Сгенерировать синтетику из сохранённой модели (без повторного обучения)
+python cli.py --from-model models/adult_model.pkl --rows 10000
+```
+
+### Интеграционный тест
+
+```bash
+cd final_system
+python run_adult.py   # QUICK_TEST = True внутри файла (~2–3 мин)
 ```
 
 ---
@@ -146,122 +136,135 @@ QUICK_TEST = True
 Реальные данные
       │
       ▼
-[DataProcessor]           ← очистка, заполнение пропусков
+[DataProcessor]           ← очистка, автодетекция типов колонок
       │
       ▼
  train / holdout split    ← ДО обучения генератора (методологически важно)
       │
-   ┌──┴───────────────┐
-   ▼                  ▼
-[DPCTGANGenerator]  holdout (генератор не видит)
+   ┌──┴───────────────────────┐
+   ▼                          ▼
+[DPCTGANGenerator]        holdout (генератор не видит)
+   │                          │
+   ▼                          ▼
+[Синтетические данные]   контрольная группа
    │
-   ▼
-[Синтетические данные]
-   │
-   ├──▶ [PrivacyEvaluator]   ← DCR, NNDR, MIA, k/l/t
+   ├──▶ [PrivacyEvaluator]   ← DCR, NNDR, MIA, k/l/t-анонимность
    └──▶ [UtilityEvaluator]   ← JSD, TVD, TSTR/TRTR
               │
               ▼
          [Reporter]          ← вердикт PASS / FAIL / PARTIAL + JSON-отчёт
+              │
+              ▼
+    [ProcessRegistry]        ← PostgreSQL (опционально)
 ```
 
-Разделение реальных данных на `real_train` и `real_holdout` выполняется **до** обучения генератора. Это обеспечивает корректную оценку меморизации: `real_holdout` остаётся невидимым для генератора и используется как контрольная группа при вычислении DCR и MIA.
+`real_holdout` не передаётся в генератор — только в оценщики. Это обеспечивает корректное измерение меморизации (DCR, MIA).
 
 ---
 
-## Компоненты
-
-### Генератор (`synthesizer/dp_ctgan.py`)
-
-Обёртка над SmartNoise Synth DPCTGAN с полным аудитом DP-бюджета.
-
-`privacy_report()` возвращает структуру с разделением:
-- `dp_config` — параметры DP (epsilon, delta, sigma, max_grad_norm)
-- `dp_spent` — фактический расход бюджета (spent_epsilon_final, epochs_completed, история)
-- `reproducibility` — random_seed и версия библиотеки
-
-### Оценка приватности (`evaluator/privacy/`)
-
-Структура отчёта:
-- `dp_guarantees` — формальные DP-гарантии от генератора
-- `empirical_risk.distance_metrics` — DCR (synth→real vs holdout→real), NNDR
-- `empirical_risk.membership_inference` — AUC атакующего классификатора
-- `diagnostic.classical` — k-анонимность, l-разнообразие, t-близость
-
-### Оценка полезности (`evaluator/utility/`)
-
-Структура отчёта:
-- `statistical` — JSD по числовым колонкам, TVD по категориальным, дельты mean/std/median
-- `correlations` — MAE матриц Pearson и Cramér's V
-- `ml_efficacy` — TRTR score, TSTR score, Utility Loss
-
-### Репортер (`reporter/reporter.py`)
-
-Вердикт:
-- `PASS` — все проверки пройдены
-- `FAIL` — одна или несколько проверок провалены (перечислены в `issues`)
-- `PARTIAL` — часть модулей не запускалась
-
----
-
-## Пример вывода
+## Структура репозитория
 
 ```
-============================================================
-  Вердикт: PASS
-============================================================
-  DP:       spent_ε = 2.48, epochs = 87/300
-  Utility:  TRTR F1 = 0.834, TSTR F1 = 0.811, loss = 0.023
-  Privacy:  MIA AUC = 0.516, DCR ok = True
-  k/l/t:    k=43, l=12, t=0.377
-  Синтетика: data/adult_synth.csv (26000 строк)
-  Отчёт:    reporter/reports/
-============================================================
+.
+├── openapi.yaml                 # OpenAPI 3.1.0 спецификация всех эндпоинтов
+├── requirements.txt
+├── db/
+│   └── init_db.sql              # Инициализация схемы PostgreSQL
+└── final_system/
+    ├── api/                     # FastAPI REST API
+    │   ├── main.py              # Точка входа (uvicorn api.main:app)
+    │   ├── settings.py          # Конфигурация через env / .env
+    │   ├── store.py             # In-memory хранилище запусков и оценок
+    │   ├── dependencies.py      # Bearer-авторизация
+    │   ├── routers/             # Эндпоинты по ресурсам
+    │   │   ├── runs.py          # /runs — запуск и мониторинг пайплайна
+    │   │   ├── models.py        # /models — управление моделями
+    │   │   ├── datasets.py      # /datasets — загрузка датасетов
+    │   │   ├── configs.py       # /configs — управление YAML-конфигами
+    │   │   ├── evaluations.py   # /evaluations — изолированная оценка
+    │   │   └── system.py        # /health, /metrics
+    │   └── schemas/             # Pydantic-схемы запросов и ответов
+    ├── synthesizer/
+    │   └── dp_ctgan.py          # DP-CTGAN генератор (SmartNoise)
+    ├── evaluator/
+    │   ├── privacy/             # k/l/t, DCR, NNDR, MIA
+    │   └── utility/             # JSD, TVD, TSTR, TRTR
+    ├── reporter/
+    │   └── reporter.py          # Вердикт PASS/FAIL/PARTIAL + JSON-отчёт
+    ├── data_service/
+    │   ├── data_io.py           # CSV / PostgreSQL I/O
+    │   └── processor.py         # Предобработка, детекция типов
+    ├── registry/
+    │   └── process_registry.py  # PostgreSQL-трекинг запусков (опционально)
+    ├── configs/
+    │   └── adult.yaml           # Основной конфиг (пример)
+    ├── pipeline.py              # run_pipeline() — главный оркестратор
+    ├── config_loader.py         # YAML → Pydantic-объекты
+    ├── cli.py                   # CLI-интерфейс
+    └── run_adult.py             # Интеграционный тест (Adult Census)
 ```
 
 ---
 
-## База данных
+## Конфигурация (YAML)
 
-Схема `synthetic_data_schema` содержит четыре таблицы:
-
-| Таблица | Назначение |
-|---------|-----------|
-| `processes` | Запись о каждом запуске пайплайна (статус, время, пути к данным) |
-| `process_logs` | Логи запуска в текстовом виде |
-| `process_metadata` | Метаданные в JSONB (параметры генерации, метрики приватности и полезности) |
-| `metadata_types` | Справочник типов метаданных |
-
-Инициализация: `db/init_db.sql`
-
----
-
-## Конфигурация
-
-Все параметры системы задаются в `final_system/config.ini`:
+Основной конфиг — `final_system/configs/adult.yaml`. Валидируется через Pydantic в `config_loader.py`.
 
 | Секция | Описание |
-|--------|----------|
-| `[DATABASE]` | Параметры подключения к PostgreSQL |
-| `[PATHS]` | Пути к входным данным, логам, конфигу |
-| `[GENERATOR]` | Параметры DPCTGANConfig в JSON-формате |
-| `[PRIVACY]` | Квазиидентификаторы, чувствительный атрибут, флаги метрик |
-| `[UTILITY]` | Целевой признак, тип задачи, исключаемые колонки |
-| `[DATA_SCHEMA]` | Разбивка колонок по типам (категориальные / непрерывные) |
-| `[PIPELINE]` | Параметры пайплайна (размер выборки, holdout, предобработка) |
+|---|---|
+| `pipeline` | sample_size, holdout_size, random_state, n_synth_rows |
+| `generator` | epsilon, delta, sigma, epochs, batch_size, cuda |
+| `data_schema` | auto-детекция или явное задание categorical/continuous колонок |
+| `privacy` | quasi_identifiers, sensitive_attribute |
+| `utility` | target_column, task_type (classification/regression) |
+| `thresholds` | PASS/FAIL пороги: max_utility_loss, max_mean_jsd, max_mia_auc и др. |
+
+`config.ini` — легаси-формат, не используется.
+
+---
+
+## Эндпоинты API
+
+| Метод | Путь | Описание |
+|---|---|---|
+| POST | `/api/v1/runs` | Запустить пайплайн |
+| GET | `/api/v1/runs/{run_id}` | Статус запуска |
+| GET | `/api/v1/runs/{run_id}/report` | JSON-отчёт |
+| GET | `/api/v1/runs/{run_id}/synthetic` | Скачать синтетику (CSV/JSON) |
+| GET | `/api/v1/datasets` | Список датасетов |
+| POST | `/api/v1/datasets` | Загрузить датасет |
+| GET | `/api/v1/models` | Список моделей |
+| POST | `/api/v1/models/{model_id}/samples` | Сгенерировать из модели |
+| POST | `/api/v1/evaluations/privacy` | Изолированная оценка приватности |
+| POST | `/api/v1/evaluations/utility` | Изолированная оценка полезности |
+| GET | `/api/v1/health` | Healthcheck |
+
+Полный список (33 эндпоинта) — в `openapi.yaml` или на `/docs`.
+
+---
+
+## База данных (опционально)
+
+```bash
+psql -U postgres -f db/init_db.sql
+```
+
+Схема `synthetic_data_schema`, таблицы: `processes`, `process_logs`, `process_metadata`, `metadata_types`. Отключить через `--no-db` (CLI) или `DB_DISABLED=true` (API).
 
 ---
 
 ## Воспроизводимость
 
-Для воспроизводимости экспериментов:
-- Фиксируйте `random_seed` в `DPCTGANConfig`
-- Сохраняйте обученную модель: `generator.save("model.pkl")`
-- Загрузка: `DPCTGANGenerator.load("model.pkl")`
-- Версия библиотеки фиксируется в `privacy_report()["snsynth_version"]`
+```python
+# CLI
+python cli.py --save-model models/my_model.pkl
+python cli.py --from-model models/my_model.pkl --rows 50000
 
----
+# Программно
+from synthesizer.dp_ctgan import DPCTGANGenerator
+generator = DPCTGANGenerator.load("models/my_model.pkl")
+df = generator.sample(10000)
+```
 
-## Лицензия
+Фиксируйте `random_state` в конфиге и сохраняйте модель для воспроизводимости эксперимента.
 
-Проект создан в учебных целях в рамках выпускной квалификационной работы НИУ ВШЭ.
