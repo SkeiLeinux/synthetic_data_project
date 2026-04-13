@@ -267,7 +267,7 @@ def _run_from_model(args, cfg, log_path: str) -> None:
         python cli.py --from-model models/adult.pkl
         python cli.py --from-model models/adult.pkl --rows 5000 --data data/adult.csv
     """
-    from synthesizer.dp_ctgan import DPCTGANGenerator
+    from synthesizer.loader import load_generator
 
     model_path = args.from_model
     if not Path(model_path).exists():
@@ -276,7 +276,7 @@ def _run_from_model(args, cfg, log_path: str) -> None:
 
     logger.info(f"Загрузка модели: {model_path}")
     try:
-        generator = DPCTGANGenerator.load(model_path)
+        generator = load_generator(model_path)
     except Exception as e:
         logger.error(f"Не удалось загрузить модель: {e}")
         sys.exit(1)
@@ -312,7 +312,7 @@ def _run_from_model(args, cfg, log_path: str) -> None:
     print("=" * 60)
     print(f"  Модель:    {model_path}")
     print(f"  Строк:     {len(synth_df)}")
-    print(f"  Spent ε:   {dp.get('spent_epsilon_final', 'n/a')}")
+    print(f"  Spent eps: {dp.get('spent_epsilon_final', 'n/a')}")
     print(f"  Эпох:      {dp.get('epochs_completed', 'n/a')}")
     print(f"  Синтетика: {synth_out}")
     print("=" * 60)
@@ -326,17 +326,19 @@ def _run_from_model(args, cfg, log_path: str) -> None:
 
 def _print_config_summary(cfg) -> None:
     print("\n=== КОНФИГ ===")
-    print(f"  dataset:      {cfg.pipeline.dataset_name}")
-    print(f"  data_path:    {cfg.pipeline.data_path}")
-    print(f"  epsilon:      {cfg.generator.epsilon}")
-    print(f"  epochs:       {cfg.generator.epochs}")
-    print(f"  target:       {cfg.utility.target_column}")
+    print(f"  dataset:        {cfg.pipeline.dataset_name}")
+    print(f"  data_path:      {cfg.pipeline.data_path}")
+    print(f"  generator_type: {cfg.generator.generator_type}")
+    if cfg.generator.generator_type in ("dpctgan", "dptvae"):
+        print(f"  epsilon:        {cfg.generator.epsilon}")
+    print(f"  epochs:         {cfg.generator.epochs}")
+    print(f"  target:         {cfg.utility.target_column}")
     schema = cfg.data_schema
     if schema.is_auto:
-        print("  schema:       автодетекция")
+        print("  schema:         автодетекция")
     else:
-        print(f"  categorical:  {len(schema.categorical)} колонок")
-        print(f"  continuous:   {len(schema.continuous)} колонок")
+        print(f"  categorical:    {len(schema.categorical)} колонок")
+        print(f"  continuous:     {len(schema.continuous)} колонок")
 
 
 def _print_verdict(report: dict, synth_out: Path, output_dir: str) -> None:
@@ -346,9 +348,9 @@ def _print_verdict(report: dict, synth_out: Path, output_dir: str) -> None:
     print(f"  Вердикт: {verdict['overall']}")
     print("=" * 60)
 
-    dp = report.get("generator", {}).get("dp_spent", {})
+    dp = (report.get("generator") or {}).get("dp_spent") or {}
     print(
-        f"  DP:       spent_ε = {dp.get('spent_epsilon_final', 'n/a')}, "
+        f"  DP:       spent_eps = {dp.get('spent_epsilon_final', 'n/a')}, "
         f"epochs = {dp.get('epochs_completed', 'n/a')}/{dp.get('epochs_requested', 'n/a')}"
     )
 
@@ -378,7 +380,7 @@ def _print_verdict(report: dict, synth_out: Path, output_dir: str) -> None:
     )
 
     if verdict["issues"]:
-        print(f"\n  ⚠ Проблемы:")
+        print(f"\n  [!] Проблемы:")
         for issue in verdict["issues"]:
             print(f"    - {issue}")
 

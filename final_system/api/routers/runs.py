@@ -254,8 +254,8 @@ def generate_more_synthetic(
     if not model_path.exists():
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Файл модели не найден"})
 
-    from synthesizer.dp_ctgan import DPCTGANGenerator
-    generator = DPCTGANGenerator.load(str(model_path))
+    from synthesizer.loader import load_generator
+    generator = load_generator(str(model_path))
     synth_df = generator.sample(n_rows)
 
     import io

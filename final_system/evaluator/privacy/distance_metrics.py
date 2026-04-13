@@ -177,7 +177,16 @@ def compute_distance_metrics(
 
     sample_size: ограничиваем выборку для скорости (None = весь датасет).
     """
-    # Сэмплируем для ускорения на больших датасетах
+    # Сэмплируем для ускорения на больших датасетах.
+    # reference (real_train) тоже ограничиваем — иначе промежуточный тензор
+    # (batch, n_reference, n_features) выходит за пределы RAM.
+    # При 24k строках и 105 признаках батч 500×24k×105×8 байт ≈ 10 ГБ.
+    _REF_CAP = 5000  # эталонная выборка: достаточно для стат. надёжности DCR/NNDR
+    if len(real_train_df) > _REF_CAP:
+        real_train_ref = real_train_df.sample(_REF_CAP, random_state=42)
+    else:
+        real_train_ref = real_train_df
+
     if sample_size and len(synth_df) > sample_size:
         synth_sample = synth_df.sample(sample_size, random_state=42)
     else:
@@ -190,14 +199,14 @@ def compute_distance_metrics(
 
     logger.info(
         f"[distance] Кодирование и нормализация признаков... "
-        f"train={len(real_train_df)}, synth={len(synth_sample)}, holdout={len(holdout_sample)}"
+        f"train_ref={len(real_train_ref)}, synth={len(synth_sample)}, holdout={len(holdout_sample)}"
     )
 
     # Кодируем синтетику и holdout относительно real_train.
     # real_train — эталон: на нём обучаем scaler и one-hot словарь,
     # затем применяем ту же трансформацию к synth и holdout.
-    ref_arr, synth_arr = _encode_and_normalize(real_train_df, synth_sample)
-    _, holdout_arr = _encode_and_normalize(real_train_df, holdout_sample)
+    ref_arr, synth_arr = _encode_and_normalize(real_train_ref, synth_sample)
+    _, holdout_arr = _encode_and_normalize(real_train_ref, holdout_sample)
 
     # DCR
     logger.info("[distance] Считаем DCR (synth → real_train)...")

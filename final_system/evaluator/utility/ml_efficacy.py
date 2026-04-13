@@ -146,10 +146,17 @@ def _run_single_experiment(
     )
 
     if config.task_type == "classification":
-        # Кодируем целевую переменную, если она строковая
+        # Кодируем целевую переменную, если она строковая.
+        # Encoder обучается на объединении меток train+test, чтобы не упасть
+        # если синтетика содержит неполный набор классов (напр. из-за DP-шума).
         if y_train.dtype == object:
             le_target = LabelEncoder()
-            y_train = le_target.fit_transform(y_train.astype(str))
+            all_labels = pd.concat([
+                y_train.astype(str),
+                y_test.astype(str),
+            ]).unique()
+            le_target.fit(all_labels)
+            y_train = le_target.transform(y_train.astype(str))
             y_test = le_target.transform(y_test.astype(str))
         model = RandomForestClassifier(
             n_estimators=config.n_estimators,

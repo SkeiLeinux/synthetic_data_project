@@ -32,9 +32,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Загружаем оригинальные dataclass'ы, чтобы config_loader возвращал
 # именно те объекты, которые ожидают synthesizer, evaluator, reporter.
 from synthesizer.dp_ctgan import DPCTGANConfig
+from synthesizer.dp_tvae import DPTVAEConfig
+from synthesizer.sdv_generators import CTGANConfig, TVAEConfig, CopulaGANConfig
 from evaluator.privacy.privacy_evaluator import PrivacyConfig
 from evaluator.utility.utility_evaluator import UtilityConfig
 from reporter.reporter import VerdictThresholds
+
+# Тип конфига генератора (union всех вариантов)
+GeneratorConfig = DPCTGANConfig | DPTVAEConfig | CTGANConfig | TVAEConfig | CopulaGANConfig
 
 
 # ==============================================================================
@@ -99,30 +104,76 @@ class PipelineConfig(BaseModel):
         return self
 
 
+_DP_GENERATOR_TYPES = {"dpctgan", "dptvae"}
+_ALL_GENERATOR_TYPES = {"dpctgan", "dptvae", "ctgan", "tvae", "copulagan"}
+
+
 class GeneratorYamlConfig(BaseModel):
-    """Параметры генератора DP-CTGAN из YAML."""
+    """
+    Параметры генератора из YAML.
+
+    Поле generator_type определяет, какой генератор будет создан:
+        dpctgan   -- DP-CTGAN (SmartNoise Synth) — default, с DP-гарантиями
+        dptvae    -- DP-TVAE (Opacus + TVAE) — с DP-гарантиями
+        ctgan     -- CTGAN (SDV) — без DP, baseline
+        tvae      -- TVAE (SDV) — без DP, baseline
+        copulagan -- CopulaGAN (SDV) — без DP, baseline
+
+    Поля применяются избирательно в зависимости от generator_type.
+    Non-DP генераторы игнорируют epsilon/delta/sigma/max_per_sample_grad_norm.
+    Поля DP-специфичны для конкретных генераторов отмечены комментариями.
+    """
+    generator_type: str = "dpctgan"
+
+    # DP-параметры (используются dpctgan / dptvae)
     epsilon: float = 3.0
-    preprocessor_eps: float = 0.5
     delta: Optional[float] = None
+
+    # DP-CTGAN specific
+    preprocessor_eps: float = 0.5
     sigma: float = 5.0
     max_per_sample_grad_norm: float = 1.0
+    disabled_dp: bool = False
+    loss: str = "cross_entropy"
+    nullable: bool = False
+
+    # DP-TVAE specific
+    max_grad_norm: float = 1.0
+
+    # Общие параметры обучения
     epochs: int = 300
     batch_size: int = 500
+    embedding_dim: int = 128
+    cuda: bool = True
+    verbose: bool = True
+    random_seed: Optional[int] = 42
+
+    # CTGAN / CopulaGAN architecture
     discriminator_steps: int = 1
     pac: int = 1
-    embedding_dim: int = 128
     generator_dim: List[int] = Field(default_factory=lambda: [256, 256])
     discriminator_dim: List[int] = Field(default_factory=lambda: [256, 256])
     generator_lr: float = 2e-4
     generator_decay: float = 1e-6
     discriminator_lr: float = 2e-4
     discriminator_decay: float = 1e-6
-    cuda: bool = True
-    verbose: bool = True
-    disabled_dp: bool = False
-    loss: str = "cross_entropy"
-    nullable: bool = False
-    random_seed: Optional[int] = 42
+    log_frequency: bool = True
+
+    # TVAE / DP-TVAE architecture
+    compress_dims: List[int] = Field(default_factory=lambda: [128, 128])
+    decompress_dims: List[int] = Field(default_factory=lambda: [128, 128])
+    l2scale: float = 1e-5
+    loss_factor: int = 2
+
+    @field_validator("generator_type")
+    @classmethod
+    def check_generator_type(cls, v: str) -> str:
+        if v not in _ALL_GENERATOR_TYPES:
+            raise ValueError(
+                f"generator_type должен быть одним из {sorted(_ALL_GENERATOR_TYPES)}, "
+                f"получено: {v!r}"
+            )
+        return v
 
     @field_validator("epsilon")
     @classmethod
@@ -133,15 +184,15 @@ class GeneratorYamlConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_preprocessor_eps(self) -> "GeneratorYamlConfig":
-        if not (0.0 <= self.preprocessor_eps < self.epsilon):
-            raise ValueError(
-                f"preprocessor_eps={self.preprocessor_eps} должен быть "
-                f"в [0, epsilon={self.epsilon})"
-            )
+        if self.generator_type == "dpctgan" and not self.disabled_dp:
+            if not (0.0 <= self.preprocessor_eps < self.epsilon):
+                raise ValueError(
+                    f"preprocessor_eps={self.preprocessor_eps} должен быть "
+                    f"в [0, epsilon={self.epsilon})"
+                )
         return self
 
     def to_dpctgan_config(self) -> DPCTGANConfig:
-        """Конвертирует в DPCTGANConfig для передачи в генератор."""
         return DPCTGANConfig(
             epsilon=self.epsilon,
             preprocessor_eps=self.preprocessor_eps,
@@ -164,6 +215,74 @@ class GeneratorYamlConfig(BaseModel):
             disabled_dp=self.disabled_dp,
             loss=self.loss,
             nullable=self.nullable,
+            random_seed=self.random_seed,
+        )
+
+    def to_dptvae_config(self) -> DPTVAEConfig:
+        return DPTVAEConfig(
+            sigma=self.sigma,
+            delta=self.delta,
+            max_grad_norm=self.max_grad_norm,
+            embedding_dim=self.embedding_dim,
+            compress_dims=tuple(self.compress_dims),
+            decompress_dims=tuple(self.decompress_dims),
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            l2scale=self.l2scale,
+            loss_factor=self.loss_factor,
+            cuda=self.cuda,
+            random_seed=self.random_seed,
+        )
+
+    def to_ctgan_config(self) -> CTGANConfig:
+        return CTGANConfig(
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            discriminator_steps=self.discriminator_steps,
+            pac=self.pac,
+            embedding_dim=self.embedding_dim,
+            generator_dim=tuple(self.generator_dim),
+            discriminator_dim=tuple(self.discriminator_dim),
+            generator_lr=self.generator_lr,
+            generator_decay=self.generator_decay,
+            discriminator_lr=self.discriminator_lr,
+            discriminator_decay=self.discriminator_decay,
+            log_frequency=self.log_frequency,
+            cuda=self.cuda,
+            verbose=self.verbose,
+            random_seed=self.random_seed,
+        )
+
+    def to_tvae_config(self) -> TVAEConfig:
+        return TVAEConfig(
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            embedding_dim=self.embedding_dim,
+            compress_dims=tuple(self.compress_dims),
+            decompress_dims=tuple(self.decompress_dims),
+            l2scale=self.l2scale,
+            loss_factor=self.loss_factor,
+            cuda=self.cuda,
+            verbose=self.verbose,
+            random_seed=self.random_seed,
+        )
+
+    def to_copulagan_config(self) -> CopulaGANConfig:
+        return CopulaGANConfig(
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            discriminator_steps=self.discriminator_steps,
+            pac=self.pac,
+            embedding_dim=self.embedding_dim,
+            generator_dim=tuple(self.generator_dim),
+            discriminator_dim=tuple(self.discriminator_dim),
+            generator_lr=self.generator_lr,
+            generator_decay=self.generator_decay,
+            discriminator_lr=self.discriminator_lr,
+            discriminator_decay=self.discriminator_decay,
+            log_frequency=self.log_frequency,
+            cuda=self.cuda,
+            verbose=self.verbose,
             random_seed=self.random_seed,
         )
 
@@ -281,8 +400,28 @@ class AppConfig(BaseModel):
 
     # ── Удобные методы для run_pipeline() ─────────────────────────────────────
 
-    def get_generator_config(self) -> DPCTGANConfig:
-        return self.generator.to_dpctgan_config()
+    def get_generator_type(self) -> str:
+        """Возвращает тип генератора из конфига."""
+        return self.generator.generator_type
+
+    def get_generator_config(self) -> "GeneratorConfig":
+        """
+        Возвращает конфиг в типе, соответствующем generator_type.
+        pipeline.py использует его через build_generator().
+        """
+        t = self.generator.generator_type
+        if t == "dpctgan":
+            return self.generator.to_dpctgan_config()
+        elif t == "dptvae":
+            return self.generator.to_dptvae_config()
+        elif t == "ctgan":
+            return self.generator.to_ctgan_config()
+        elif t == "tvae":
+            return self.generator.to_tvae_config()
+        elif t == "copulagan":
+            return self.generator.to_copulagan_config()
+        else:
+            raise ValueError(f"Неизвестный generator_type: {t!r}")
 
     def get_privacy_config(self) -> PrivacyConfig:
         return self.privacy.to_privacy_config()

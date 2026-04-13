@@ -1,0 +1,126 @@
+# ==============================================================================
+# Конфигурация: DP-TVAE (Opacus) — с дифференциальной приватностью
+# Датасет: Adult Census Income
+# Использование: python cli.py --config configs/adult_dptvae.yaml
+#
+# DP-TVAE: вариационный автоэнкодер с DP-SGD через Opacus.
+# DP-гарантии применяются с первой итерации ко всей модели (encoder + decoder).
+#
+# Сравнение с DP-CTGAN (adult.yaml):
+#   - Другая архитектура (VAE vs GAN): нет нестабильности обучения
+#   - Тот же privacy accountant (RDP через Opacus)
+#   - Обычно требует больше эпох для сходимости, чем DP-CTGAN
+# ==============================================================================
+
+paths:
+  logs: logs/app.log
+  output_dir: reporter/reports
+
+database:
+  host: localhost
+  port: 5432
+  dbname: synthetic_data_db
+  user: postgres
+  password: "111"
+  schema: synthetic_data_schema
+
+pipeline:
+  dataset_name: adult_census_dptvae
+  data_source: csv
+  data_path: data/adult.csv
+  sample_size: 0
+  n_synth_rows: 0
+  run_preprocessing: true
+  holdout_size: 0.2
+  random_state: 42
+
+# ── Генератор ─────────────────────────────────────────────────────────────────
+generator:
+  generator_type: dptvae
+
+  # Параметры дифференциальной приватности (Opacus 0.14 API)
+  # sigma — noise_multiplier в DP-SGD; тратимый epsilon считается постфактум
+  # через RDP accountant после обучения.
+  # Рекомендуемые значения sigma:
+  #   sigma=1.0–2.0 — слабая защита (высокое качество)
+  #   sigma=3.0–7.0 — умеренная защита (enterprise-баланс)
+  #   sigma=10.0+   — строгая защита (финансы/здравоохранение)
+  sigma: 5.0             # noise_multiplier для DP-SGD
+  delta: null            # null = авторасчёт как 1 / (n * sqrt(n))
+  max_grad_norm: 1.0     # клиппинг нормы градиентов (C в DP-SGD)
+
+  # Параметры обучения
+  # Opacus требует drop_last=True, поэтому batch_size < n_train_rows.
+  # При n_train~26000 и batch_size=500 → ~52 шага на эпоху.
+  epochs: 300
+  batch_size: 500
+
+  # Архитектура VAE
+  embedding_dim: 128
+  compress_dims: [128, 128]
+  decompress_dims: [128, 128]
+
+  # Функция потерь
+  l2scale: 0.00001
+  loss_factor: 2
+
+  # Режимы
+  cuda: true
+  random_seed: 42
+
+# ── Оценка полезности ─────────────────────────────────────────────────────────
+utility:
+  target_column: income
+  task_type: classification
+  drop_columns:
+    - fnlwgt
+  n_estimators: 100
+  random_state: 42
+
+# ── Оценка приватности ────────────────────────────────────────────────────────
+privacy:
+  quasi_identifiers:
+    - age
+    - education
+    - occupation
+    - sex
+    - race
+  sensitive_attribute: income
+  compute_classical: true
+  compute_distance: true
+  compute_mia: true
+  distance_sample_size: 2000
+  mia_sample_size: 1000
+
+# ── Пороги вердикта (DP профиль, аналогичен adult.yaml) ──────────────────────
+thresholds:
+  max_utility_loss: 0.15
+  max_mean_jsd: 0.20
+  max_mia_auc: 0.55
+  require_dcr_privacy_preserved: true
+  require_dp_enabled: true
+  max_spent_epsilon: 5.0
+
+# ── Схема данных ──────────────────────────────────────────────────────────────
+data_schema:
+  categorical:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+    - income
+  continuous:
+    - age
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  exclude:
+    - fnlwgt
+  direct_identifiers: []
+  drop_high_cardinality: false
+  cardinality_threshold: 0.9

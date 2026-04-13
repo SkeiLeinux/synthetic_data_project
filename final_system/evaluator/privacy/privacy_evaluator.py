@@ -182,8 +182,8 @@ class PrivacyEvaluator:
         if dp_report is None:
             return {"available": False}
 
-        dp_spent = dp_report.get("dp_spent", {})
-        dp_config = dp_report.get("dp_config", {})
+        dp_spent = dp_report.get("dp_spent") or {}
+        dp_config = dp_report.get("dp_config") or {}
 
         return {
             "available": True,

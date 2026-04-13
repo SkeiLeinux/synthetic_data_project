@@ -8,13 +8,20 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from data_service.processor import DataProcessor
+from synthesizer.base import BaseGenerator
 from synthesizer.dp_ctgan import DPCTGANConfig, DPCTGANGenerator
+from synthesizer.dp_tvae import DPTVAEConfig, DPTVAEGenerator
+from synthesizer.sdv_generators import (
+    CTGANConfig, CTGANGenerator,
+    TVAEConfig, TVAEGenerator,
+    CopulaGANConfig, CopulaGANGenerator,
+)
 from evaluator.privacy.privacy_evaluator import PrivacyConfig, PrivacyEvaluator
 from evaluator.utility.utility_evaluator import UtilityConfig, UtilityEvaluator
 from reporter.reporter import Reporter, VerdictThresholds
@@ -24,9 +31,37 @@ from logger_config import setup_logger
 logger = setup_logger(__name__)
 
 
+def build_generator(synth_config: Any) -> BaseGenerator:
+    """
+    Фабрика генераторов: создаёт нужный генератор по типу конфига.
+
+    Поддерживаемые типы:
+        DPCTGANConfig  → DPCTGANGenerator  (DP-CTGAN, SmartNoise)
+        DPTVAEConfig   → DPTVAEGenerator   (DP-TVAE, Opacus)
+        CTGANConfig    → CTGANGenerator    (CTGAN, SDV, без DP)
+        TVAEConfig     → TVAEGenerator     (TVAE, SDV, без DP)
+        CopulaGANConfig→ CopulaGANGenerator(CopulaGAN, SDV, без DP)
+    """
+    if isinstance(synth_config, DPCTGANConfig):
+        return DPCTGANGenerator(synth_config)
+    elif isinstance(synth_config, DPTVAEConfig):
+        return DPTVAEGenerator(synth_config)
+    elif isinstance(synth_config, CTGANConfig):
+        return CTGANGenerator(synth_config)
+    elif isinstance(synth_config, TVAEConfig):
+        return TVAEGenerator(synth_config)
+    elif isinstance(synth_config, CopulaGANConfig):
+        return CopulaGANGenerator(synth_config)
+    else:
+        raise TypeError(
+            f"Неизвестный тип конфига генератора: {type(synth_config).__name__}. "
+            f"Задайте generator_type в конфиге YAML."
+        )
+
+
 def run_pipeline(
     real_df: pd.DataFrame,
-    synth_config: DPCTGANConfig,
+    synth_config: Any,   # DPCTGANConfig | DPTVAEConfig | CTGANConfig | TVAEConfig | CopulaGANConfig
     privacy_config: PrivacyConfig,
     utility_config: UtilityConfig,
     categorical_columns: List[str],
@@ -141,26 +176,26 @@ def run_pipeline(
                 columns=[c for c in extra_cols if c in real_holdout.columns]
             )
 
-        generator = DPCTGANGenerator(synth_config)
+        generator = build_generator(synth_config)
+        generator_type = type(synth_config).__name__.replace("Config", "").lower()
 
-        # Предварительная оценка бюджета через dry run.
-        # Линейная экстраполяция занижает результат из-за нелинейности RDP —
-        # используем как нижнюю оценку; SmartNoise всё равно остановится сам.
-        if not synth_config.disabled_dp:
-            logger.info("[Pipeline] Предварительная оценка бюджета (dry run, 5 эпох)...")
-            estimated_max = generator.estimate_max_epochs(real_train, probe_epochs=5)
-            if estimated_max is not None:
-                if estimated_max < synth_config.epochs:
-                    logger.warning(
-                        f"[Pipeline] Оценка: бюджет ε={synth_config.epsilon} исчерпается "
-                        f"~на эпохе {estimated_max} (запрошено {synth_config.epochs}). "
-                        f"SmartNoise остановится автоматически — это ожидаемо."
-                    )
-                else:
-                    logger.info(
-                        f"[Pipeline] Оценка: бюджет покрывает все {synth_config.epochs} эпох "
-                        f"(max≈{estimated_max})."
-                    )
+        # Предварительная оценка бюджета через dry run (только для DPCTGANGenerator,
+        # который реализует estimate_max_epochs; остальные возвращают None).
+        estimated_max = generator.estimate_max_epochs(real_train, probe_epochs=5)
+        if estimated_max is not None:
+            epsilon = getattr(synth_config, "epsilon", None)
+            epochs = getattr(synth_config, "epochs", None)
+            if epochs is not None and estimated_max < epochs:
+                logger.warning(
+                    f"[Pipeline] Оценка: бюджет ε={epsilon} исчерпается "
+                    f"~на эпохе {estimated_max} (запрошено {epochs}). "
+                    f"SmartNoise остановится автоматически — это ожидаемо."
+                )
+            else:
+                logger.info(
+                    f"[Pipeline] Оценка: бюджет покрывает все {epochs} эпох "
+                    f"(max≈{estimated_max})."
+                )
 
         generator.fit(
             real_train,
@@ -219,7 +254,7 @@ def run_pipeline(
             privacy_report=privacy_report,
             minimization_report=minimization_report,
             dataset_name=dataset_name,
-            generator_type="dpctgan",
+            generator_type=generator_type,
             process_id=process_id,
         )
         filepath = reporter.save(report, output_dir=output_dir)

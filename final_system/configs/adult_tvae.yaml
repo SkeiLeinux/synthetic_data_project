@@ -1,0 +1,111 @@
+# ==============================================================================
+# Конфигурация: TVAE (SDV) — без дифференциальной приватности
+# Датасет: Adult Census Income
+# Использование: python cli.py --config configs/adult_tvae.yaml
+#
+# TVAE использует вариационный автоэнкодер вместо GAN:
+#   - более стабильное обучение (нет проблемы mode collapse)
+#   - иногда хуже воспроизводит числовые распределения
+#   - быстрее сходится на небольших датасетах
+# ==============================================================================
+
+paths:
+  logs: logs/app.log
+  output_dir: reporter/reports
+
+database:
+  host: localhost
+  port: 5432
+  dbname: synthetic_data_db
+  user: postgres
+  password: "111"
+  schema: synthetic_data_schema
+
+pipeline:
+  dataset_name: adult_census_tvae
+  data_source: csv
+  data_path: data/adult.csv
+  sample_size: 0
+  n_synth_rows: 0
+  run_preprocessing: true
+  holdout_size: 0.2
+  random_state: 42
+
+# ── Генератор ─────────────────────────────────────────────────────────────────
+generator:
+  generator_type: tvae
+
+  # Параметры обучения
+  epochs: 300
+  batch_size: 500
+
+  # Архитектура VAE
+  embedding_dim: 128
+  compress_dims: [128, 128]    # размеры скрытых слоёв энкодера
+  decompress_dims: [128, 128]  # размеры скрытых слоёв декодера
+
+  # Функция потерь ELBO
+  l2scale: 0.00001   # L2-регуляризация (weight decay)
+  loss_factor: 2     # вес reconstruction loss относительно KL-дивергенции
+
+  # Режимы
+  cuda: true
+  verbose: true
+  random_seed: 42
+
+# ── Оценка полезности ─────────────────────────────────────────────────────────
+utility:
+  target_column: income
+  task_type: classification
+  drop_columns:
+    - fnlwgt
+  n_estimators: 100
+  random_state: 42
+
+# ── Оценка приватности ────────────────────────────────────────────────────────
+privacy:
+  quasi_identifiers:
+    - age
+    - education
+    - occupation
+    - sex
+    - race
+  sensitive_attribute: income
+  compute_classical: true
+  compute_distance: true
+  compute_mia: true
+  distance_sample_size: 2000
+  mia_sample_size: 1000
+
+# ── Пороги вердикта (non-DP профиль) ─────────────────────────────────────────
+thresholds:
+  max_utility_loss: 0.10
+  max_mean_jsd: 0.15
+  max_mia_auc: 0.60
+  require_dcr_privacy_preserved: true
+  require_dp_enabled: false
+  max_spent_epsilon: null
+
+# ── Схема данных ──────────────────────────────────────────────────────────────
+data_schema:
+  categorical:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+    - income
+  continuous:
+    - age
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  exclude:
+    - fnlwgt
+  direct_identifiers: []
+  drop_high_cardinality: false
+  cardinality_threshold: 0.9

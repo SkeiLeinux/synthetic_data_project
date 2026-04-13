@@ -145,8 +145,8 @@ def sample_from_model(
     if not path.exists():
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Модель '{model_id}' не найдена"})
 
-    from synthesizer.dp_ctgan import DPCTGANGenerator
-    generator = DPCTGANGenerator.load(str(path))
+    from synthesizer.loader import load_generator
+    generator = load_generator(str(path))
     synth_df = generator.sample(body.n_rows)
 
     if body.output_format == "json":

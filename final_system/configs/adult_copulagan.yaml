@@ -1,0 +1,118 @@
+# ==============================================================================
+# Конфигурация: CopulaGAN (SDV) — без дифференциальной приватности
+# Датасет: Adult Census Income
+# Использование: python cli.py --config configs/adult_copulagan.yaml
+#
+# CopulaGAN = CTGAN + предварительная нормализация числовых колонок через
+# гауссовы копулы. Это улучшает воспроизведение маргинальных распределений
+# числовых признаков по сравнению с чистым CTGAN.
+# Хорошо работает на датасетах с нестандартными числовыми распределениями.
+# ==============================================================================
+
+paths:
+  logs: logs/app.log
+  output_dir: reporter/reports
+
+database:
+  host: localhost
+  port: 5432
+  dbname: synthetic_data_db
+  user: postgres
+  password: "111"
+  schema: synthetic_data_schema
+
+pipeline:
+  dataset_name: adult_census_copulagan
+  data_source: csv
+  data_path: data/adult.csv
+  sample_size: 0
+  n_synth_rows: 0
+  run_preprocessing: true
+  holdout_size: 0.2
+  random_state: 42
+
+# ── Генератор ─────────────────────────────────────────────────────────────────
+generator:
+  generator_type: copulagan
+
+  # Параметры обучения
+  epochs: 300
+  batch_size: 500
+
+  # Архитектура (аналогична CTGAN)
+  embedding_dim: 128
+  generator_dim: [256, 256]
+  discriminator_dim: [256, 256]
+
+  # Оптимизатор
+  generator_lr: 0.0002
+  generator_decay: 0.000001
+  discriminator_lr: 0.0002
+  discriminator_decay: 0.000001
+
+  # GAN-специфика
+  discriminator_steps: 1
+  pac: 10
+
+  # Режимы
+  cuda: true
+  verbose: true
+  log_frequency: true
+  random_seed: 42
+
+# ── Оценка полезности ─────────────────────────────────────────────────────────
+utility:
+  target_column: income
+  task_type: classification
+  drop_columns:
+    - fnlwgt
+  n_estimators: 100
+  random_state: 42
+
+# ── Оценка приватности ────────────────────────────────────────────────────────
+privacy:
+  quasi_identifiers:
+    - age
+    - education
+    - occupation
+    - sex
+    - race
+  sensitive_attribute: income
+  compute_classical: true
+  compute_distance: true
+  compute_mia: true
+  distance_sample_size: 2000
+  mia_sample_size: 1000
+
+# ── Пороги вердикта (non-DP профиль) ─────────────────────────────────────────
+thresholds:
+  max_utility_loss: 0.10
+  max_mean_jsd: 0.15
+  max_mia_auc: 0.60
+  require_dcr_privacy_preserved: true
+  require_dp_enabled: false
+  max_spent_epsilon: null
+
+# ── Схема данных ──────────────────────────────────────────────────────────────
+data_schema:
+  categorical:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+    - income
+  continuous:
+    - age
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  exclude:
+    - fnlwgt
+  direct_identifiers: []
+  drop_high_cardinality: false
+  cardinality_threshold: 0.9
