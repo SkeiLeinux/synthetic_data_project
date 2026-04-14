@@ -352,6 +352,10 @@ class DPTVAEGenerator(BaseGenerator):
             decompress_dims=self.config.decompress_dims,
             embedding_dim=self.config.embedding_dim,
         )
+        # Перемещаем на устройство ДО создания PrivacyEngine —
+        # иначе Opacus 0.14 создаёт шумовые тензоры на CPU, что
+        # вызывает device mismatch при optimizer.step() на CUDA.
+        model.to(self._device)
 
         optimizer = optim.Adam(
             model.parameters(),
@@ -382,7 +386,6 @@ class DPTVAEGenerator(BaseGenerator):
 
         # ── 4. Цикл обучения ──────────────────────────────────────────────────
         model.train()
-        model.to(self._device)
         t0 = time.monotonic()
 
         try:
