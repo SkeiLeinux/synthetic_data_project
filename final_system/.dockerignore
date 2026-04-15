@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+venv/
+.venv/
+*.pkl
+data/
+models/
+logs/
+reporter/reports/
+archive/

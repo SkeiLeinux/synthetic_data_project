@@ -1,0 +1,41 @@
+# ─── Core ────────────────────────────────────────────────────
+numpy>=2.4,<3.0
+pandas>=2.3,<3.0
+
+# ─── Database ────────────────────────────────────────────────
+SQLAlchemy>=2.0,<3.0
+psycopg2-binary>=2.9
+
+# ─── Synthetic data generation ───────────────────────────────
+# smartnoise-synth требует opacus<0.15 — не обновлять opacus без проверки
+smartnoise-synth==1.0.6
+sdv~=1.35.1
+
+# ─── Deep learning ───────────────────────────────────────────
+# Для CUDA-сборки устанавливать через:
+#   pip install torch~=2.11.0 --index-url https://download.pytorch.org/whl/cu128
+torch~=2.11.0
+opacus~=0.14.0
+
+# ─── ML / Privacy evaluation ─────────────────────────────────
+scikit-learn>=1.8,<2.0
+scipy>=1.17
+sdmetrics~=0.28.0
+
+# ─── API ─────────────────────────────────────────────────────
+fastapi~=0.135.3
+redis>=5.0
+uvicorn>=0.44
+starlette>=1.0
+python-multipart>=0.0.26
+
+# ─── Config / Serialization ──────────────────────────────────
+PyYAML~=6.0.3
+pydantic~=2.12.5
+pydantic-settings~=2.13.1
+
+# ─── Utils ───────────────────────────────────────────────────
+tqdm>=4.67
+
+# ─── Dev / Testing ───────────────────────────────────────────
+pytest~=9.0.3
