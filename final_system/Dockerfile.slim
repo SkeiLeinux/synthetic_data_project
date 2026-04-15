@@ -1,0 +1,34 @@
+# Dockerfile.slim
+#
+# Базовый образ для лёгких сервисов: Data Service, Evaluation Service,
+# Reporting Service. НЕ содержит torch / opacus / smartnoise / sdv.
+#
+# Использование (в docker-compose.yml):
+#   build:
+#     context: .           # контекст = final_system/
+#     dockerfile: services/<name>/Dockerfile
+#
+# Каждый сервис создаёт свой Dockerfile с этим шаблоном, добавляя
+# только нужные COPY-команды для своих модулей.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Каждый сервис копирует свой requirements.txt:
+# COPY services/<name>/requirements.txt .
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# Общие схемы доступны всем сервисам
+COPY shared/ ./shared/
+
+# Директория для Shared Volume
+RUN mkdir -p /data
+
+# CMD переопределяется в каждом сервисе:
+# CMD ["uvicorn", "<service>.main:app", "--host", "0.0.0.0", "--port", "800X"]

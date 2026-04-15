@@ -1,5 +1,7 @@
 services:
 
+  # ── Gateway / Orchestrator (монолит, порт 8000) ───────────────────────────
+  # Постепенно становится тонким оркестратором по мере выноса сервисов.
   app:
     build: .
     ports:
@@ -8,17 +10,24 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      # URL микросервисов — раскомментировать по мере их запуска:
+      # - DATA_SERVICE_URL=http://data_service:8001
+      # - SYNTHESIS_SERVICE_URL=http://synthesis_service:8002
+      # - EVALUATION_SERVICE_URL=http://evaluation_service:8003
+      # - REPORTING_SERVICE_URL=http://reporting_service:8004
     volumes:
       - ./data:/app/data
       - ./models:/app/models
       - ./configs:/app/configs
       - ./logs:/app/logs
       - ./reporter/reports:/app/reporter/reports
+      - shared_data:/data   # Shared Volume — подключён заранее, используется после миграции
     depends_on:
       redis:
         condition: service_healthy
     restart: on-failure
 
+  # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     ports:
@@ -31,5 +40,65 @@ services:
       timeout: 3s
       retries: 5
 
+  # ── Data Service (порт 8001) ───────────────────────────────────────────────
+  # Фаза 1. Раскомментировать после реализации services/data_service/.
+  # data_service:
+  #   build:
+  #     context: .
+  #     dockerfile: services/data_service/Dockerfile
+  #   ports:
+  #     - "8001:8001"
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379/0
+  #   volumes:
+  #     - shared_data:/data
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: on-failure
+
+  # ── Synthesis Service (порт 8002) ─────────────────────────────────────────
+  # Фаза 4. Тяжёлый образ (torch + opacus + smartnoise + sdv).
+  # synthesis_service:
+  #   build:
+  #     context: .
+  #     dockerfile: services/synthesis_service/Dockerfile
+  #   ports:
+  #     - "8002:8002"
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379/0
+  #   volumes:
+  #     - shared_data:/data
+  #     - ./configs:/app/configs
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: on-failure
+
+  # ── Evaluation Service (порт 8003) ────────────────────────────────────────
+  # Фаза 3. Лёгкий образ (sklearn/scipy, без torch).
+  # evaluation_service:
+  #   build:
+  #     context: .
+  #     dockerfile: services/evaluation_service/Dockerfile
+  #   ports:
+  #     - "8003:8003"
+  #   volumes:
+  #     - shared_data:/data
+  #   restart: on-failure
+
+  # ── Reporting Service (порт 8004) ─────────────────────────────────────────
+  # Фаза 2. Минимальный образ (только fastapi + pydantic).
+  # reporting_service:
+  #   build:
+  #     context: .
+  #     dockerfile: services/reporting_service/Dockerfile
+  #   ports:
+  #     - "8004:8004"
+  #   volumes:
+  #     - shared_data:/data
+  #   restart: on-failure
+
 volumes:
   redis_data:
+  shared_data:    # Shared Volume: /data/{datasets,splits,synth,models,reports}
