@@ -1,16 +1,18 @@
 # api/store.py
 #
-# Потокобезопасное in-memory хранилище состояния запусков.
-# MVP-реализация: данные живут в памяти процесса.
-# В production заменяется на Redis или PostgreSQL.
+# Redis-backed хранилище состояния запусков.
+# RunRecord сериализуется в JSON и хранится под ключом run:{run_id}.
+# Сортировка по дате создания поддерживается через ZSET runs:by_created.
 
 from __future__ import annotations
 
-import threading
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from enum import Enum
+
+import redis
 
 
 class RunStatus(str, Enum):
@@ -71,29 +73,116 @@ class EvalRecord:
     finished_at:   Optional[datetime] = None
 
 
-class RunStore:
-    """Потокобезопасный реестр запусков пайплайна."""
+# ─── Serialization helpers ────────────────────────────────────────────────────
 
-    def __init__(self) -> None:
-        self._runs: Dict[str, RunRecord] = {}
-        self._lock = threading.Lock()
+def _serialize_run(record: RunRecord) -> str:
+    return json.dumps({
+        "run_id":          record.run_id,
+        "dataset_name":    record.dataset_name,
+        "config_name":     record.config_name,
+        "status":          record.status.value,
+        "verdict":         record.verdict,
+        "save_model":      record.save_model,
+        "webhook_url":     record.webhook_url,
+        "n_synth_rows":    record.n_synth_rows,
+        "model_id":        record.model_id,
+        "synth_rows":      record.synth_rows,
+        "synth_path":      record.synth_path,
+        "report_path":     record.report_path,
+        "report":          record.report,
+        "config_snapshot": record.config_snapshot,
+        "error_message":   record.error_message,
+        "created_at":      record.created_at.isoformat(),
+        "started_at":      record.started_at.isoformat() if record.started_at else None,
+        "finished_at":     record.finished_at.isoformat() if record.finished_at else None,
+    })
+
+
+def _deserialize_run(raw: str) -> RunRecord:
+    d = json.loads(raw)
+    return RunRecord(
+        run_id=         d["run_id"],
+        dataset_name=   d["dataset_name"],
+        config_name=    d["config_name"],
+        status=         RunStatus(d["status"]),
+        verdict=        d.get("verdict"),
+        save_model=     d.get("save_model", False),
+        webhook_url=    d.get("webhook_url"),
+        n_synth_rows=   d.get("n_synth_rows"),
+        model_id=       d.get("model_id"),
+        synth_rows=     d.get("synth_rows"),
+        synth_path=     d.get("synth_path"),
+        report_path=    d.get("report_path"),
+        report=         d.get("report"),
+        config_snapshot=d.get("config_snapshot"),
+        error_message=  d.get("error_message"),
+        created_at=     datetime.fromisoformat(d["created_at"]),
+        started_at=     datetime.fromisoformat(d["started_at"]) if d.get("started_at") else None,
+        finished_at=    datetime.fromisoformat(d["finished_at"]) if d.get("finished_at") else None,
+    )
+
+
+_RUN_KEY_FMT = "run:{}"
+_RUN_INDEX   = "runs:by_created"
+
+
+class RunStore:
+    """Redis-backed реестр запусков пайплайна.
+
+    Каждый RunRecord хранится как JSON-строка под ключом run:{run_id}.
+    ZSET runs:by_created (score = unix-timestamp created_at) используется
+    для итерации по всем записям в порядке убывания даты создания.
+    """
+
+    def __init__(self, redis_url: str) -> None:
+        self._r: redis.Redis = redis.from_url(redis_url, decode_responses=True)
+
+    # ── public interface ──────────────────────────────────────────────────────
 
     def add(self, record: RunRecord) -> None:
-        with self._lock:
-            self._runs[record.run_id] = record
+        key = _RUN_KEY_FMT.format(record.run_id)
+        score = record.created_at.timestamp()
+        pipe = self._r.pipeline()
+        pipe.set(key, _serialize_run(record))
+        pipe.zadd(_RUN_INDEX, {record.run_id: score})
+        pipe.execute()
 
     def get(self, run_id: str) -> Optional[RunRecord]:
-        with self._lock:
-            return self._runs.get(run_id)
+        raw = self._r.get(_RUN_KEY_FMT.format(run_id))
+        return _deserialize_run(raw) if raw is not None else None
 
     def update(self, run_id: str, **kwargs) -> Optional[RunRecord]:
-        with self._lock:
-            rec = self._runs.get(run_id)
-            if rec is None:
-                return None
-            for k, v in kwargs.items():
-                setattr(rec, k, v)
-            return rec
+        """Атомарное обновление через оптимистичную блокировку (WATCH/MULTI/EXEC).
+
+        При конкурентном изменении повторяет попытку до 3 раз.
+        """
+        key = _RUN_KEY_FMT.format(run_id)
+        for _ in range(3):
+            with self._r.pipeline() as pipe:
+                try:
+                    pipe.watch(key)
+                    raw = pipe.get(key)
+                    if raw is None:
+                        pipe.unwatch()
+                        return None
+                    rec = _deserialize_run(raw)
+                    for k, v in kwargs.items():
+                        setattr(rec, k, v)
+                    pipe.multi()
+                    pipe.set(key, _serialize_run(rec))
+                    pipe.execute()
+                    return rec
+                except redis.WatchError:
+                    continue
+        return None  # все попытки исчерпаны
+
+    def delete(self, run_id: str) -> bool:
+        key = _RUN_KEY_FMT.format(run_id)
+        pipe = self._r.pipeline()
+        pipe.delete(key)
+        pipe.zrem(_RUN_INDEX, run_id)
+        results = pipe.execute()
+        return bool(results[0])
 
     def list(
         self,
@@ -103,36 +192,33 @@ class RunStore:
         page: int = 1,
         per_page: int = 20,
     ) -> tuple[List[RunRecord], int]:
-        with self._lock:
-            items = list(self._runs.values())
+        # Извлекаем все run_id из ZSET в порядке убывания даты создания
+        run_ids: List[str] = self._r.zrange(_RUN_INDEX, 0, -1, rev=True)
+
+        records: List[RunRecord] = []
+        for run_id in run_ids:
+            raw = self._r.get(_RUN_KEY_FMT.format(run_id))
+            if raw is not None:
+                records.append(_deserialize_run(raw))
 
         # Фильтрация
         if status:
-            items = [r for r in items if r.status == status]
+            records = [r for r in records if r.status == status]
         if verdict:
-            items = [r for r in items if r.verdict == verdict]
+            records = [r for r in records if r.verdict == verdict]
         if dataset_name:
-            items = [r for r in items if r.dataset_name == dataset_name]
+            records = [r for r in records if r.dataset_name == dataset_name]
 
-        # Сортировка по дате создания (новые первые)
-        items.sort(key=lambda r: r.created_at, reverse=True)
-
-        total = len(items)
+        total = len(records)
         offset = (page - 1) * per_page
-        return items[offset: offset + per_page], total
-
-    def delete(self, run_id: str) -> bool:
-        with self._lock:
-            if run_id not in self._runs:
-                return False
-            del self._runs[run_id]
-            return True
+        return records[offset: offset + per_page], total
 
 
 class EvalStore:
-    """Потокобезопасный реестр оценок."""
+    """Потокобезопасный in-memory реестр оценок (без изменений)."""
 
     def __init__(self) -> None:
+        import threading
         self._evals: Dict[str, EvalRecord] = {}
         self._lock = threading.Lock()
 
@@ -155,5 +241,10 @@ class EvalStore:
 
 
 # Глобальные синглтоны — инициализируются при импорте
-run_store  = RunStore()
+def _make_run_store() -> RunStore:
+    from api.settings import get_settings
+    return RunStore(get_settings().redis_url)
+
+
+run_store  = _make_run_store()
 eval_store = EvalStore()

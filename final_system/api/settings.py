@@ -25,6 +25,7 @@ class Settings(BaseSettings):
         DEFAULT_CONFIG   — конфиг по умолчанию (используется если не указан config_name)
         LOG_PATH         — путь к лог-файлу
         DB_DISABLED      — true = не использовать ProcessRegistry
+        REDIS_URL        — строка подключения к Redis (default: redis://localhost:6379/0)
     """
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
 
     default_config: str = "configs/adult.yaml"
     db_disabled: bool = False
+    redis_url: str = "redis://localhost:6379/0"
 
 
 @lru_cache
