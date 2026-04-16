@@ -25,6 +25,8 @@ class SynthesisJobCreate(BaseModel):
     config_name: str
     n_rows: Optional[int] = None    # None = совпадает с размером train
     save_model: bool = False
+    run_id: Optional[str] = None          # gateway run_id — сохраняется в metadata модели
+    dataset_name: Optional[str] = None    # имя датасета — сохраняется в metadata модели
 
 
 class SampleRequest(BaseModel):

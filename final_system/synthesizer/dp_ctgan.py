@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import sys
 import pandas as pd
+from synthesizer.base import BaseGenerator
 from snsynth import Synthesizer
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class DPCTGANConfig:
 # Генератор
 # ──────────────────────────────────────────────────────────────────────────────
 
-class DPCTGANGenerator:
+class DPCTGANGenerator(BaseGenerator):
     """
     Обёртка над SmartNoise Synth DPCTGAN с полным аудитом DP-бюджета.
 
@@ -524,6 +525,8 @@ class DPCTGANGenerator:
             "fit_duration_sec": self._fit_duration_sec,
             "synth": self._synth,
             "is_fitted": self._is_fitted,
+            # Метаданные запуска (run_id, dataset_name) — устанавливаются через set_metadata()
+            **getattr(self, "_extra_metadata", {}),
         }
 
         try:

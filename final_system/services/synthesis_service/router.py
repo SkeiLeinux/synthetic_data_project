@@ -128,20 +128,30 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
         synth_df = generator.sample(n_rows)
         logger.info("[job %s] Sampled %d rows", job_id, len(synth_df))
 
-        # 6. Сохранение синтетики на shared volume
+        # 6. Сохранение синтетики на shared volume.
+        # FR-08.5: финальный synthetic.csv записывается однократно после валидации
+        # (gateway переименует pending → final после шага 7).
         synth_dir = settings.synth_dir / job_id
         synth_dir.mkdir(parents=True, exist_ok=True)
-        synth_rel = f"synth/{job_id}/synthetic.csv"
+        synth_rel = f"synth/{job_id}/synthetic_pending.csv"
         synth_df.to_csv(settings.data_root / synth_rel, index=False)
-        logger.info("[job %s] Synth saved: %s", job_id, synth_rel)
+        logger.info("[job %s] Synth (pending) saved: %s", job_id, synth_rel)
 
         # 7. Опционально: сохранение модели
         model_id: Optional[str] = None
         if body.save_model:
             model_id = str(uuid.uuid4())
             settings.models_dir.mkdir(parents=True, exist_ok=True)
+            # Прикрепляем метаданные запуска к модели перед сериализацией
+            generator.set_metadata(
+                run_id=body.run_id,
+                dataset_name=body.dataset_name,
+                model_id=model_id,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
             generator.save(str(settings.models_dir / f"{model_id}.pkl"))
-            logger.info("[job %s] Model saved: %s", job_id, model_id)
+            logger.info("[job %s] Model saved: %s (run_id=%s dataset=%s)",
+                        job_id, model_id, body.run_id, body.dataset_name)
 
         store.update(
             job_id,

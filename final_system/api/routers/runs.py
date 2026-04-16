@@ -493,10 +493,12 @@ def _execute_pipeline_microservices(
             config_name += ".yaml"
 
         job = synth_cli.post("/api/v1/jobs", json={
-            "split_id":   split_id,
+            "split_id":    split_id,
             "config_name": config_name,
-            "n_rows":     record.n_synth_rows,
-            "save_model": record.save_model,
+            "n_rows":      record.n_synth_rows,
+            "save_model":  record.save_model,
+            "run_id":      run_id,
+            "dataset_name": record.dataset_name,
         })
         job_id = job["job_id"]
         logger.info("[run %s] Step 3/7 done: job_id=%s", run_id, job_id)
@@ -557,8 +559,19 @@ def _execute_pipeline_microservices(
         verdict     = report.get("verdict", {}).get("overall", "?")
         logger.info("[run %s] Step 7/7 done: verdict=%s report=%s", run_id, verdict, report_path)
 
-        # synth_path — относительный ("synth/{job_id}/synthetic.csv"),
-        # Gateway смонтировал shared_data:/data, поэтому абсолютный путь /data/...
+        # FR-08.5: финализируем синтетику — переименовываем pending → final.
+        # Файл записывается однократно после завершения валидации (шаг 7).
+        pending_path = Path("/data") / synth_path   # .../synthetic_pending.csv
+        final_rel    = synth_path.replace("synthetic_pending.csv", "synthetic.csv")
+        final_path   = Path("/data") / final_rel
+        try:
+            pending_path.rename(final_path)
+            synth_path = final_rel
+            logger.info("[run %s] Synth finalized: %s", run_id, final_rel)
+        except OSError as e:
+            logger.warning("[run %s] Could not finalize synth file: %s", run_id, e)
+            # Оставляем pending-путь как резервный — данные не теряются
+
         abs_synth = str(Path("/data") / synth_path)
 
         verdict = report.get("verdict", {}).get("overall")

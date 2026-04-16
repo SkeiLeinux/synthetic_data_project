@@ -157,11 +157,16 @@ def split_dataset(
             df_clean = df_clean.drop(columns=drop_cols)
 
     # 6. Holdout split (атомарен с предобработкой — не повторять позже)
+    # Стратификация по target_column сохраняет баланс классов в обоих подмножествах.
     from sklearn.model_selection import train_test_split
+    stratify_col = None
+    if body.target_column and body.target_column in df_clean.columns:
+        stratify_col = df_clean[body.target_column]
     train_df, holdout_df = train_test_split(
         df_clean,
         test_size=body.holdout_size,
         random_state=body.random_state,
+        stratify=stratify_col,
     )
 
     # 7. Сохранение

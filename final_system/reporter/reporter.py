@@ -39,14 +39,16 @@ class VerdictThresholds:
     - dp:      наличие включенного DP и spent_epsilon в допустимом диапазоне
     """
     # Utility: максимально допустимая потеря ML-метрики (TRTR - TSTR)
+    # ПНСТ раздел 4: < 25 % от TRTR F1
     max_utility_loss: float = 0.25
 
     # Utility: максимально допустимое среднее JSD по числовым колонкам
+    # ПНСТ раздел 4: < 0.40
     max_mean_jsd: float = 0.40
 
     # Privacy: максимально допустимый AUC атаки MIA
-    # 0.6 = граница "атака работает лучше случайности"
-    max_mia_auc: float = 0.6
+    # ПНСТ раздел 4: ≤ 0.55 ("атака хуже или равна случайному угадыванию")
+    max_mia_auc: float = 0.55
 
     # Privacy: синтетика должна быть не ближе к train, чем holdout (DCR)
     require_dcr_privacy_preserved: bool = True

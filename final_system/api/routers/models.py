@@ -29,16 +29,15 @@ def _load_metadata(path: Path) -> Dict[str, Any]:
         return {}
 
 
-def _model_summary(path: Path, run_id: str | None = None, dataset_name: str = "unknown") -> ModelSummary:
+def _model_summary(path: Path) -> ModelSummary:
     stat = path.stat()
     meta = _load_metadata(path)
-    dp_spent = meta.get("dp_spent") or {}
     cfg = meta.get("config")
     return ModelSummary(
         model_id=path.stem,
         name=path.stem,
-        run_id=run_id,
-        dataset_name=dataset_name,
+        run_id=meta.get("run_id"),
+        dataset_name=meta.get("dataset_name", "unknown"),
         created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
         file_size_bytes=stat.st_size,
         epsilon=cfg.epsilon if cfg else None,
@@ -98,8 +97,8 @@ def get_model(
     return ModelDetail(
         model_id=path.stem,
         name=path.stem,
-        run_id=None,
-        dataset_name="unknown",
+        run_id=meta.get("run_id"),
+        dataset_name=meta.get("dataset_name", "unknown"),
         created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
         file_size_bytes=stat.st_size,
         epsilon=cfg.epsilon if cfg else None,
