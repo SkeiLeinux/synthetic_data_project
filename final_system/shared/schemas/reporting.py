@@ -38,3 +38,14 @@ class ReportRequest(BaseModel):
     privacy_report: Optional[Dict[str, Any]] = None
     minimization_report: Optional[Dict[str, Any]] = None
     thresholds: VerdictThresholdsRequest = VerdictThresholdsRequest()
+
+
+class ReportResponse(BaseModel):
+    """
+    Ответ POST /reports.
+
+    report_path — путь к сохранённому JSON-файлу на Shared Volume.
+    report      — полный dict отчёта (включая verdict, utility, privacy, generator).
+    """
+    report_path: str
+    report: Dict[str, Any]

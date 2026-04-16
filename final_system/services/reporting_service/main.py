@@ -1,35 +1,32 @@
-# services/data_service/main.py
+# services/reporting_service/main.py
 #
-# Data Service — порт 8001
-# Запуск: uvicorn main:app --host 0.0.0.0 --port 8001
-# (из директории final_system/ или через Docker)
+# Reporting Service — порт 8004
+# Запуск: uvicorn services.reporting_service.main:app --host 0.0.0.0 --port 8004
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi import Request
 
-from services.data_service.router import router
-from services.data_service.settings import get_settings
+from services.reporting_service.router import router
+from services.reporting_service.settings import get_settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    settings.datasets_dir.mkdir(parents=True, exist_ok=True)
-    settings.splits_dir.mkdir(parents=True, exist_ok=True)
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
     yield
 
 
 app = FastAPI(
-    title="Data Service",
+    title="Reporting Service",
     version="1.0.0",
-    description="Загрузка датасетов, предобработка и holdout split.",
+    description="Сборка финального отчёта и вынесение вердикта PASS/FAIL/PARTIAL.",
     lifespan=lifespan,
 )
 

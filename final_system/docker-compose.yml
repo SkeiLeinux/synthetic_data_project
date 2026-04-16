@@ -78,6 +78,11 @@ services:
       - "8001:8001"
     volumes:
       - shared_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: on-failure
 
   # ── Synthesis Service (порт 8002) ─────────────────────────────────────────
@@ -100,27 +105,37 @@ services:
 
   # ── Evaluation Service (порт 8003) ────────────────────────────────────────
   # Фаза 3. Лёгкий образ (sklearn/scipy, без torch).
-  # evaluation_service:
-  #   build:
-  #     context: .
-  #     dockerfile: services/evaluation_service/Dockerfile
-  #   ports:
-  #     - "8003:8003"
-  #   volumes:
-  #     - shared_data:/data
-  #   restart: on-failure
+  evaluation_service:
+    build:
+      context: .
+      dockerfile: services/evaluation_service/Dockerfile
+    ports:
+      - "8003:8003"
+    volumes:
+      - shared_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
 
   # ── Reporting Service (порт 8004) ─────────────────────────────────────────
   # Фаза 2. Минимальный образ (только fastapi + pydantic).
-  # reporting_service:
-  #   build:
-  #     context: .
-  #     dockerfile: services/reporting_service/Dockerfile
-  #   ports:
-  #     - "8004:8004"
-  #   volumes:
-  #     - shared_data:/data
-  #   restart: on-failure
+  reporting_service:
+    build:
+      context: .
+      dockerfile: services/reporting_service/Dockerfile
+    ports:
+      - "8004:8004"
+    volumes:
+      - shared_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
 
 volumes:
   redis_data:
