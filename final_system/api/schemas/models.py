@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ModelSummary(BaseModel):
@@ -28,6 +28,7 @@ class SampleRequest(BaseModel):
     n_rows:        int
     output_format: str = "csv"
 
+    @field_validator("n_rows")
     @classmethod
     def validate_rows(cls, v: int) -> int:
         if v <= 0:

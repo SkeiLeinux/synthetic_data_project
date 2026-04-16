@@ -53,6 +53,21 @@ class Settings(BaseSettings):
     db_schema: str = "synthetic_data_schema"
     redis_url: str = "redis://localhost:6379/0"
 
+    # URL микросервисов (пустая строка = сервис не подключён)
+    data_service_url: str = ""
+    synthesis_service_url: str = ""
+    evaluation_service_url: str = ""
+    reporting_service_url: str = ""
+
+    @property
+    def microservices_enabled(self) -> bool:
+        return all([
+            self.data_service_url,
+            self.synthesis_service_url,
+            self.evaluation_service_url,
+            self.reporting_service_url,
+        ])
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -187,14 +187,14 @@ def run_pipeline(
             epochs = getattr(synth_config, "epochs", None)
             if epochs is not None and estimated_max < epochs:
                 logger.warning(
-                    f"[Pipeline] Оценка: бюджет ε={epsilon} исчерпается "
+                    f"[Pipeline] Оценка: бюджет eps={epsilon} исчерпается "
                     f"~на эпохе {estimated_max} (запрошено {epochs}). "
                     f"SmartNoise остановится автоматически — это ожидаемо."
                 )
             else:
                 logger.info(
                     f"[Pipeline] Оценка: бюджет покрывает все {epochs} эпох "
-                    f"(max≈{estimated_max})."
+                    f"(max~{estimated_max})."
                 )
 
         generator.fit(

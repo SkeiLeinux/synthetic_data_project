@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # → final_system/
@@ -20,16 +21,10 @@ from shared.schemas.datasets import DatasetMeta, SplitMeta, SplitRequest
 from services.data_service.settings import Settings, get_settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-def _require_auth(settings: Settings = Depends(get_settings)) -> None:
-    """Простая проверка API-ключа через заголовок — подключается как Depends."""
-    # Реальная проверка Bearer-токена добавляется при необходимости.
-    # Сейчас: если api_key не задан — авторизация отключена (dev-режим).
-    pass
-
 
 def _dataset_dir(settings: Settings, dataset_id: str) -> Path:
     return settings.datasets_dir / dataset_id
@@ -73,6 +68,7 @@ async def upload_dataset(
 
     raw_path = dataset_dir / "raw.csv"
     raw_path.write_bytes(content)
+    logger.info("Dataset uploaded: filename=%s dataset_id=%s size_bytes=%d", file.filename, dataset_id, len(content))
 
     # Считаем размерность
     df_head = pd.read_csv(io.BytesIO(content), nrows=0)
@@ -117,6 +113,8 @@ def split_dataset(
     if not raw_path.exists():
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Датасет не найден"})
 
+    logger.info("Split started: dataset_id=%s holdout=%.0f%% sample_size=%d", dataset_id, body.holdout_size * 100, body.sample_size)
+
     # 1. Загрузка
     df = pd.read_csv(raw_path, na_values=body.na_values or [])
     df.dropna(inplace=True)
@@ -150,7 +148,15 @@ def split_dataset(
         force_continuous=body.force_continuous or None,
     )
 
-    # 5. Holdout split (атомарен с предобработкой — не повторять позже)
+    # 5. Дропаем исключённые колонки из df_clean, чтобы train/holdout не содержали их.
+    # schema.categorical / schema.continuous уже не включают exclude_columns, но сам df_clean
+    # содержит их до этого момента.
+    if body.exclude_columns:
+        drop_cols = [c for c in body.exclude_columns if c in df_clean.columns]
+        if drop_cols:
+            df_clean = df_clean.drop(columns=drop_cols)
+
+    # 6. Holdout split (атомарен с предобработкой — не повторять позже)
     from sklearn.model_selection import train_test_split
     train_df, holdout_df = train_test_split(
         df_clean,
@@ -158,7 +164,7 @@ def split_dataset(
         random_state=body.random_state,
     )
 
-    # 6. Сохранение
+    # 7. Сохранение
     split_id = str(uuid.uuid4())
     split_dir = settings.splits_dir / split_id
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -183,6 +189,12 @@ def split_dataset(
         created_at=datetime.now(timezone.utc),
     )
     (split_dir / "meta.json").write_text(meta.model_dump_json(), encoding="utf-8")
+    logger.info(
+        "Split done: split_id=%s train=%d holdout=%d cat=%d cont=%d exclude=%s",
+        split_id, len(train_df), len(holdout_df),
+        len(schema.categorical), len(schema.continuous),
+        body.exclude_columns,
+    )
     return meta
 
 

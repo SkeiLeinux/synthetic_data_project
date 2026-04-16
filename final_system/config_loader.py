@@ -586,10 +586,10 @@ if __name__ == "__main__":
     print("\n=== DATA SCHEMA ===")
     s = cfg.data_schema
     if s.is_auto:
-        print("  → Автодетекция (categorical/continuous не заданы)")
+        print("  -> Автодетекция (categorical/continuous не заданы)")
     else:
         print(f"  categorical: {s.categorical}")
         print(f"  continuous:  {s.continuous}")
         print(f"  exclude:     {s.exclude}")
 
-    print("\n✓ Конфиг загружен успешно")
+    print("\n[OK] Конфиг загружен успешно")

@@ -11,11 +11,10 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - DB_HOST=postgres
-      # URL микросервисов — раскомментировать по мере их запуска:
-      # - DATA_SERVICE_URL=http://data_service:8001
-      # - SYNTHESIS_SERVICE_URL=http://synthesis_service:8002
-      # - EVALUATION_SERVICE_URL=http://evaluation_service:8003
-      # - REPORTING_SERVICE_URL=http://reporting_service:8004
+      - DATA_SERVICE_URL=http://data_service:8001
+      - SYNTHESIS_SERVICE_URL=http://synthesis_service:8002
+      - EVALUATION_SERVICE_URL=http://evaluation_service:8003
+      - REPORTING_SERVICE_URL=http://reporting_service:8004
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -34,6 +33,14 @@ services:
       redis:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      data_service:
+        condition: service_healthy
+      synthesis_service:
+        condition: service_healthy
+      evaluation_service:
+        condition: service_healthy
+      reporting_service:
         condition: service_healthy
     restart: on-failure
 

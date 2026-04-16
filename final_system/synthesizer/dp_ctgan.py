@@ -50,7 +50,7 @@ class _ProgressTeeStream:
             desc="DP-CTGAN",
             unit="epoch",
             dynamic_ncols=True,
-            bar_format="{l_bar}{bar}| {n}/{total} эпох [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+            bar_format="{l_bar}{bar}| {n}/{total} ep [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
         )
 
     def write(self, data: str) -> int:
@@ -493,7 +493,7 @@ class DPCTGANGenerator:
 
         logger.info(
             f"[estimate_max_epochs] probe spent={spent_probe:.4f} за {probe_epochs} эпох, "
-            f"ε/epoch≈{eps_per_epoch:.4f}, оценка max_epochs≈{estimated}"
+            f"eps/epoch~{eps_per_epoch:.4f}, оценка max_epochs~{estimated}"
         )
         self._epochs_estimated_max = estimated
         return estimated

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +23,7 @@ from services.synthesis_service.job_store import JobRecord, JobStatus, JobStore,
 from services.synthesis_service.settings import Settings, get_settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -89,32 +92,48 @@ def _job_to_summary(rec: JobRecord) -> SynthesisJobSummary:
 def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
     store = job_store
     store.update(job_id, status=JobStatus.running, started_at=datetime.now(timezone.utc))
+    t0 = time.time()
+    logger.info("[job %s] Started: split_id=%s config=%s n_rows=%s", job_id, body.split_id, body.config_name, body.n_rows)
     try:
         # 1. Загрузка метаданных сплита
         meta = _load_split_meta(settings, body.split_id)
         train_df = pd.read_csv(settings.splits_dir / body.split_id / "train.csv")
+        logger.info("[job %s] Loaded train set: %d rows, %d columns", job_id, len(train_df), len(train_df.columns))
 
         # 2. Загрузка конфига генератора
         config_path = _resolve_config(settings, body.config_name)
         gen_yaml = _load_gen_yaml(config_path)
         generator = _build_generator(gen_yaml)
+        logger.info("[job %s] Generator: %s", job_id, gen_yaml.generator_type)
 
         # 3. Фильтрация колонок (на случай если после preprocessing их нет в train_df)
         cat_cols = [c for c in meta.categorical_columns if c in train_df.columns]
         cont_cols = [c for c in meta.continuous_columns if c in train_df.columns]
 
+        # Дропаем неклассифицированные колонки — SDV отвергает любые колонки,
+        # не указанные как categorical/continuous (зеркалит поведение pipeline.py)
+        all_classified = set(cat_cols + cont_cols)
+        train_df = train_df[[c for c in train_df.columns if c in all_classified]]
+        logger.info("[job %s] Columns: cat=%d cont=%d total=%d", job_id, len(cat_cols), len(cont_cols), len(train_df.columns))
+
         # 4. Обучение
+        logger.info("[job %s] Fitting generator...", job_id)
+        t_fit = time.time()
         generator.fit(train_df, categorical_columns=cat_cols, continuous_columns=cont_cols)
+        logger.info("[job %s] Fit done in %.1fs", job_id, time.time() - t_fit)
 
         # 5. Генерация
         n_rows = body.n_rows or len(train_df)
+        logger.info("[job %s] Sampling %d rows...", job_id, n_rows)
         synth_df = generator.sample(n_rows)
+        logger.info("[job %s] Sampled %d rows", job_id, len(synth_df))
 
         # 6. Сохранение синтетики на shared volume
         synth_dir = settings.synth_dir / job_id
         synth_dir.mkdir(parents=True, exist_ok=True)
         synth_rel = f"synth/{job_id}/synthetic.csv"
         synth_df.to_csv(settings.data_root / synth_rel, index=False)
+        logger.info("[job %s] Synth saved: %s", job_id, synth_rel)
 
         # 7. Опционально: сохранение модели
         model_id: Optional[str] = None
@@ -122,6 +141,7 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
             model_id = str(uuid.uuid4())
             settings.models_dir.mkdir(parents=True, exist_ok=True)
             generator.save(str(settings.models_dir / f"{model_id}.pkl"))
+            logger.info("[job %s] Model saved: %s", job_id, model_id)
 
         store.update(
             job_id,
@@ -131,8 +151,10 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
             dp_report=generator.privacy_report(),
             finished_at=datetime.now(timezone.utc),
         )
+        logger.info("[job %s] Done in %.1fs total", job_id, time.time() - t0)
 
     except Exception as exc:
+        logger.error("[job %s] Failed after %.1fs: %s", job_id, time.time() - t0, exc, exc_info=True)
         store.update(
             job_id,
             status=JobStatus.failed,

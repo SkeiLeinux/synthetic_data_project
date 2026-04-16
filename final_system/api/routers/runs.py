@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import uuid
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from api.dependencies import require_auth
 from api.schemas.runs import RunCreate, RunDetail, RunListResponse, RunSummary
@@ -18,6 +19,7 @@ from api.settings import Settings, get_settings
 from api.store import RunRecord, RunStatus, run_store
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -250,7 +252,6 @@ def get_run_logs(
     if tail:
         lines = lines[-tail:]
 
-    from fastapi.responses import PlainTextResponse
     return PlainTextResponse("".join(lines))
 
 
@@ -314,20 +315,40 @@ def generate_more_synthetic(
     if not n_rows or n_rows <= 0:
         raise HTTPException(status_code=400, detail={"code": "VALIDATION_ERROR", "message": "n_rows должен быть > 0"})
 
-    model_path = settings.models_dir / f"{record.model_id}.pkl"
-    if not model_path.exists():
-        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Файл модели не найден"})
-
-    from synthesizer.loader import load_generator
-    generator = load_generator(str(model_path))
-    synth_df = generator.sample(n_rows)
-
     import io
+
+    if settings.microservices_enabled:
+        # Делегируем генерацию в Synthesis Service
+        from api.clients import ServiceClient
+        synth_cli = ServiceClient(settings.synthesis_service_url, timeout=300)
+        result = synth_cli.post(f"/api/v1/models/{record.model_id}/sample", json={"n_rows": n_rows})
+        synth_path = Path("/data") / result["synth_path"]
+    else:
+        # Монолитный fallback
+        model_path = settings.models_dir / f"{record.model_id}.pkl"
+        if not model_path.exists():
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Файл модели не найден"})
+        from synthesizer.loader import load_generator
+        import pandas as pd
+        generator = load_generator(str(model_path))
+        synth_df = generator.sample(n_rows)
+        buf = io.StringIO()
+        synth_df.to_csv(buf, index=False)
+        buf.seek(0)
+        return StreamingResponse(
+            iter([buf.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{record.dataset_name}_extra_{n_rows}.csv"'},
+        )
+
+    if not synth_path.exists():
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Файл синтетики не найден"})
+
+    import pandas as pd
+    synth_df = pd.read_csv(synth_path)
     buf = io.StringIO()
     synth_df.to_csv(buf, index=False)
     buf.seek(0)
-
-    from fastapi.responses import StreamingResponse
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
@@ -358,7 +379,8 @@ def _list_pg_runs(settings: Settings) -> list[RunSummary]:
             rows = conn.execute(sql).mappings().all()
         engine.dispose()
         return [RunSummary.from_pg_row(dict(row)) for row in rows]
-    except Exception:
+    except Exception as e:
+        logger.warning("_list_pg_runs: DB query failed: %s", e)
         return []  # БД недоступна — возвращаем пустой список, не роняем API
 
 def _get_or_404(run_id: str) -> RunRecord:
@@ -395,9 +417,187 @@ def _execute_pipeline(
 ) -> None:
     """
     Выполняется в фоновом потоке FastAPI BackgroundTasks.
-    Обновляет RunRecord в run_store по мере выполнения.
+    Если все URL микросервисов заданы — оркестрирует через HTTP.
+    Иначе — запускает монолитный пайплайн напрямую (fallback).
     """
-    import sys, os
+    if settings.microservices_enabled:
+        _execute_pipeline_microservices(run_id, dataset_path, config_path, settings, quick_test)
+    else:
+        _execute_pipeline_monolith(run_id, dataset_path, config_path, settings, quick_test)
+
+
+def _execute_pipeline_microservices(
+    run_id:       str,
+    dataset_path: str,
+    config_path:  str,
+    settings:     Settings,
+    quick_test:   bool = False,
+) -> None:
+    """Оркестрирует пайплайн через HTTP-вызовы к микросервисам."""
+    import sys
+    sys.path.insert(0, str(settings.base_dir))
+
+    from api.clients import ServiceClient, poll_synthesis_job
+    from config_loader import load_config, apply_quick_test
+
+    run_store.update(run_id, status=RunStatus.running, started_at=datetime.now(timezone.utc))
+    logger.info("[run %s] Pipeline started: dataset=%s config=%s", run_id, dataset_path, config_path)
+
+    try:
+        record = run_store.get(run_id)
+
+        cfg = load_config(config_path)
+        if quick_test:
+            cfg = apply_quick_test(cfg)
+        cfg_raw = yaml.safe_load(open(config_path, encoding="utf-8"))
+        run_store.update(run_id, config_snapshot=cfg_raw)
+
+        data_cli  = ServiceClient(settings.data_service_url,      timeout=60)
+        synth_cli = ServiceClient(settings.synthesis_service_url,  timeout=60)
+        eval_cli  = ServiceClient(settings.evaluation_service_url, timeout=300)
+        rep_cli   = ServiceClient(settings.reporting_service_url,  timeout=60)
+
+        # 1. Загрузка датасета в Data Service
+        logger.info("[run %s] Step 1/7: uploading dataset", run_id)
+        dataset_meta = data_cli.post_file("/api/v1/datasets", dataset_path)
+        dataset_id = dataset_meta["dataset_id"]
+        logger.info("[run %s] Step 1/7 done: dataset_id=%s rows=%s", run_id, dataset_id, dataset_meta.get("rows"))
+
+        # 2. Предобработка + holdout split
+        logger.info("[run %s] Step 2/7: preprocessing + holdout split", run_id)
+        force_cat = list(cfg.data_schema.categorical)
+        if cfg.utility.target_column and cfg.utility.target_column not in force_cat:
+            force_cat.append(cfg.utility.target_column)
+
+        split_meta = data_cli.post(f"/api/v1/datasets/{dataset_id}/split", json={
+            "holdout_size":          cfg.pipeline.holdout_size,
+            "random_state":          cfg.pipeline.random_state,
+            "sample_size":           cfg.pipeline.sample_size,
+            "target_column":         cfg.utility.target_column,
+            "force_categorical":     force_cat,
+            "force_continuous":      cfg.data_schema.continuous,
+            "exclude_columns":       cfg.data_schema.exclude,
+            "direct_identifiers":    cfg.data_schema.direct_identifiers,
+            "drop_high_cardinality": cfg.data_schema.drop_high_cardinality,
+            "cardinality_threshold": cfg.data_schema.cardinality_threshold,
+            "na_values":             ["?"],
+        })
+        split_id = split_meta["split_id"]
+        logger.info("[run %s] Step 2/7 done: split_id=%s train=%s holdout=%s",
+                    run_id, split_id, split_meta.get("train_rows"), split_meta.get("holdout_rows"))
+
+        # 3. Запуск джоба синтеза
+        logger.info("[run %s] Step 3/7: starting synthesis job", run_id)
+        config_name = record.config_name
+        if not config_name.endswith(".yaml"):
+            config_name += ".yaml"
+
+        job = synth_cli.post("/api/v1/jobs", json={
+            "split_id":   split_id,
+            "config_name": config_name,
+            "n_rows":     record.n_synth_rows,
+            "save_model": record.save_model,
+        })
+        job_id = job["job_id"]
+        logger.info("[run %s] Step 3/7 done: job_id=%s", run_id, job_id)
+
+        # 4. Ожидание завершения синтеза (polling)
+        poll_interval = 5 if quick_test else 10
+        logger.info("[run %s] Step 4/7: waiting for synthesis (polling every %ds)...", run_id, poll_interval)
+        job = poll_synthesis_job(synth_cli, job_id, poll_interval=poll_interval, timeout=7200)
+
+        synth_path = job["synth_path"]      # относительный путь на shared volume
+        dp_report  = job.get("dp_report")
+        model_id   = job.get("model_id")
+        logger.info("[run %s] Step 4/7 done: synth_path=%s", run_id, synth_path)
+
+        # 5. Оценка приватности
+        logger.info("[run %s] Step 5/7: privacy evaluation", run_id)
+        privacy_report = eval_cli.post("/api/v1/evaluate/privacy", json={
+            "split_id":           split_id,
+            "synth_path":         synth_path,
+            "dp_report":          dp_report,
+            "quasi_identifiers":  cfg.privacy.quasi_identifiers,
+            "sensitive_attribute": cfg.privacy.sensitive_attribute,
+        })
+        logger.info("[run %s] Step 5/7 done", run_id)
+
+        # 6. Оценка полезности
+        logger.info("[run %s] Step 6/7: utility evaluation", run_id)
+        utility_report = eval_cli.post("/api/v1/evaluate/utility", json={
+            "split_id":           split_id,
+            "synth_path":         synth_path,
+            "target_column":      cfg.utility.target_column,
+            "categorical_columns": split_meta["categorical_columns"],
+            "continuous_columns":  split_meta["continuous_columns"],
+        })
+        logger.info("[run %s] Step 6/7 done", run_id)
+
+        # 7. Финальный отчёт
+        logger.info("[run %s] Step 7/7: building report", run_id)
+        thresholds = cfg.get_thresholds()
+        rep_resp = rep_cli.post("/api/v1/reports", json={
+            "run_id":          run_id,
+            "dataset_name":    cfg.pipeline.dataset_name,
+            "generator_type":  cfg.generator.generator_type,
+            "dp_report":       dp_report,
+            "utility_report":  utility_report,
+            "privacy_report":  privacy_report,
+            "thresholds": {
+                "max_utility_loss":             thresholds.max_utility_loss,
+                "max_mean_jsd":                 thresholds.max_mean_jsd,
+                "max_mia_auc":                  thresholds.max_mia_auc,
+                "require_dcr_privacy_preserved": thresholds.require_dcr_privacy_preserved,
+                "require_dp_enabled":            thresholds.require_dp_enabled,
+                "max_spent_epsilon":             thresholds.max_spent_epsilon,
+            },
+        })
+        report      = rep_resp["report"]
+        report_path = rep_resp["report_path"]
+        verdict     = report.get("verdict", {}).get("overall", "?")
+        logger.info("[run %s] Step 7/7 done: verdict=%s report=%s", run_id, verdict, report_path)
+
+        # synth_path — относительный ("synth/{job_id}/synthetic.csv"),
+        # Gateway смонтировал shared_data:/data, поэтому абсолютный путь /data/...
+        abs_synth = str(Path("/data") / synth_path)
+
+        verdict = report.get("verdict", {}).get("overall")
+        run_store.update(
+            run_id,
+            status=RunStatus.completed,
+            verdict=verdict,
+            synth_path=abs_synth,
+            synth_rows=split_meta.get("train_rows"),
+            report=report,
+            report_path=report_path,
+            model_id=model_id,
+            finished_at=datetime.now(timezone.utc),
+        )
+
+        record = run_store.get(run_id)
+        if record and record.webhook_url:
+            _send_webhook(record)
+
+    except Exception as exc:
+        logger.error("[run %s] Pipeline failed: %s", run_id, exc, exc_info=True)
+        run_store.update(
+            run_id,
+            status=RunStatus.failed,
+            error_message=str(exc),
+            finished_at=datetime.now(timezone.utc),
+        )
+        run_store.expire(run_id, 3600)
+
+
+def _execute_pipeline_monolith(
+    run_id:       str,
+    dataset_path: str,
+    config_path:  str,
+    settings:     Settings,
+    quick_test:   bool = False,
+) -> None:
+    """Fallback: запускает пайплайн локально (старый монолитный режим)."""
+    import sys
     sys.path.insert(0, str(settings.base_dir))
 
     run_store.update(
@@ -406,43 +606,37 @@ def _execute_pipeline(
         started_at=datetime.now(timezone.utc),
     )
 
+    registry = None
     try:
         import pandas as pd
-        from config_loader import load_config
-        from data_service.data_io import DataIO
+        from config_loader import load_config, apply_quick_test
         from data_service.processor import DataProcessor
         from pipeline import run_pipeline
 
         record = run_store.get(run_id)
 
-        # Загружаем конфиг
-        from config_loader import apply_quick_test
         cfg = load_config(config_path)
         if quick_test:
             cfg = apply_quick_test(cfg)
         cfg_raw = yaml.safe_load(open(config_path, encoding="utf-8"))
 
-        # ProcessRegistry — пишет исторические данные в PostgreSQL по завершению
-        registry = None
         if not settings.db_disabled and cfg.database is not None:
             from registry.process_registry import ProcessRegistry
-            cfg.database.host = settings.db_host  # docker: postgres, local: localhost
+            cfg.database.host = settings.db_host
             try:
                 registry = ProcessRegistry(cfg)
                 if not registry.test_connection():
                     registry = None
             except Exception:
-                registry = None  # БД недоступна — продолжаем без неё
+                registry = None
         run_store.update(run_id, config_snapshot=cfg_raw)
 
-        # Загружаем датасет
         df = pd.read_csv(dataset_path, na_values=["?"])
         df.dropna(inplace=True)
 
         if cfg.pipeline.sample_size > 0:
             df = df.sample(cfg.pipeline.sample_size, random_state=cfg.pipeline.random_state).reset_index(drop=True)
 
-        # Схема колонок
         if cfg.data_schema.is_auto:
             processor = DataProcessor(df)
             schema = processor.detect_column_types(
@@ -458,7 +652,6 @@ def _execute_pipeline(
         n_train_approx = int(len(df) * (1 - cfg.pipeline.holdout_size))
         n_synth_rows = record.n_synth_rows or cfg.get_n_synth_rows(n_train_approx)
 
-        # Пути вывода
         synth_path = str(settings.data_dir / f"{record.dataset_name}_synth_{run_id[:8]}.csv")
         model_save_path = None
         model_id = None
@@ -468,7 +661,6 @@ def _execute_pipeline(
             model_save_path = str(settings.models_dir / f"{model_id}.pkl")
 
         output_dir = str(settings.reports_dir)
-        log_path = str(settings.base_dir / settings.log_path)
 
         synth_df, report = run_pipeline(
             real_df=df,
@@ -497,7 +689,6 @@ def _execute_pipeline(
         synth_df.to_csv(synth_path, index=False)
 
         verdict = report.get("verdict", {}).get("overall")
-
         run_store.update(
             run_id,
             status=RunStatus.completed,
@@ -510,13 +701,10 @@ def _execute_pipeline(
             finished_at=datetime.now(timezone.utc),
         )
 
-        # Webhook-уведомление
         record = run_store.get(run_id)
         if record and record.webhook_url:
             _send_webhook(record)
 
-        # Запись сохранена в PostgreSQL — даём 1 час на чтение через API,
-        # затем Redis удалит её автоматически
         if registry is not None:
             run_store.expire(run_id, 3600)
 
@@ -548,5 +736,5 @@ def _send_webhook(record: RunRecord) -> None:
             method="POST",
         )
         urllib.request.urlopen(req, timeout=10)
-    except Exception:
-        pass  # webhook — best-effort, не роняем пайплайн
+    except Exception as e:
+        logger.warning("[run %s] Webhook delivery failed: %s", record.run_id, e)

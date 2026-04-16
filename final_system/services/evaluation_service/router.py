@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict
 
@@ -16,6 +18,7 @@ from shared.schemas.evaluation import PrivacyEvalRequest, UtilityEvalRequest
 from services.evaluation_service.settings import Settings, get_settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -48,10 +51,13 @@ def evaluate_privacy(
     body: PrivacyEvalRequest,
     settings: Settings = Depends(get_settings),
 ) -> Dict[str, Any]:
+    t0 = time.time()
+    logger.info("Privacy eval started: split_id=%s synth_path=%s", body.split_id, body.synth_path)
     split_dir = settings.splits_dir / body.split_id
     real_train = _load_csv(split_dir / "train.csv", "train.csv")
     real_holdout = _load_csv(split_dir / "holdout.csv", "holdout.csv")
     synth = _load_csv(_resolve_synth(settings, body.synth_path), "synthetic.csv")
+    logger.info("Privacy eval: train=%d holdout=%d synth=%d", len(real_train), len(real_holdout), len(synth))
 
     config = PrivacyConfig(
         quasi_identifiers=body.quasi_identifiers,
@@ -59,7 +65,9 @@ def evaluate_privacy(
         compute_classical=bool(body.quasi_identifiers and body.sensitive_attribute),
     )
     evaluator = PrivacyEvaluator(config)
-    return evaluator.evaluate(real_train, real_holdout, synth, dp_report=body.dp_report)
+    result = evaluator.evaluate(real_train, real_holdout, synth, dp_report=body.dp_report)
+    logger.info("Privacy eval done in %.1fs", time.time() - t0)
+    return result
 
 
 # ── POST /evaluate/utility ────────────────────────────────────────────────────
@@ -73,6 +81,8 @@ def evaluate_utility(
     body: UtilityEvalRequest,
     settings: Settings = Depends(get_settings),
 ) -> Dict[str, Any]:
+    t0 = time.time()
+    logger.info("Utility eval started: split_id=%s target=%s", body.split_id, body.target_column)
     split_dir = settings.splits_dir / body.split_id
     real_train = _load_csv(split_dir / "train.csv", "train.csv")
     real_holdout = _load_csv(split_dir / "holdout.csv", "holdout.csv")
@@ -81,4 +91,6 @@ def evaluate_utility(
     config = UtilityConfig(target_column=body.target_column)
     evaluator = UtilityEvaluator(config)
     # real_test_df = holdout: отложенная выборка, которую генератор не видел
-    return evaluator.evaluate(real_train, synth, real_holdout)
+    result = evaluator.evaluate(real_train, synth, real_holdout)
+    logger.info("Utility eval done in %.1fs", time.time() - t0)
+    return result

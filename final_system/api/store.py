@@ -23,13 +23,6 @@ class RunStatus(str, Enum):
     cancelled = "cancelled"
 
 
-class EvalStatus(str, Enum):
-    queued    = "queued"
-    running   = "running"
-    completed = "completed"
-    failed    = "failed"
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -60,17 +53,6 @@ class RunRecord:
         if self.started_at and self.finished_at:
             return (self.finished_at - self.started_at).total_seconds()
         return None
-
-
-@dataclass
-class EvalRecord:
-    evaluation_id: str
-    eval_type:     str   # "privacy" | "utility"
-    status:        EvalStatus = EvalStatus.queued
-    report:        Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
-    created_at:    datetime = field(default_factory=_now)
-    finished_at:   Optional[datetime] = None
 
 
 # ─── Serialization helpers ────────────────────────────────────────────────────
@@ -218,37 +200,10 @@ class RunStore:
         return records[offset: offset + per_page], total
 
 
-class EvalStore:
-    """Потокобезопасный in-memory реестр оценок (без изменений)."""
-
-    def __init__(self) -> None:
-        import threading
-        self._evals: Dict[str, EvalRecord] = {}
-        self._lock = threading.Lock()
-
-    def add(self, record: EvalRecord) -> None:
-        with self._lock:
-            self._evals[record.evaluation_id] = record
-
-    def get(self, evaluation_id: str) -> Optional[EvalRecord]:
-        with self._lock:
-            return self._evals.get(evaluation_id)
-
-    def update(self, evaluation_id: str, **kwargs) -> Optional[EvalRecord]:
-        with self._lock:
-            rec = self._evals.get(evaluation_id)
-            if rec is None:
-                return None
-            for k, v in kwargs.items():
-                setattr(rec, k, v)
-            return rec
-
-
 # Глобальные синглтоны — инициализируются при импорте
 def _make_run_store() -> RunStore:
     from api.settings import get_settings
     return RunStore(get_settings().redis_url)
 
 
-run_store  = _make_run_store()
-eval_store = EvalStore()
+run_store = _make_run_store()
