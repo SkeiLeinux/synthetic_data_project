@@ -10,6 +10,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
       # URL микросервисов — раскомментировать по мере их запуска:
       # - DATA_SERVICE_URL=http://data_service:8001
       # - SYNTHESIS_SERVICE_URL=http://synthesis_service:8002
@@ -22,12 +23,40 @@ services:
       - ./logs:/app/logs
       - ./reporter/reports:/app/reporter/reports
       - shared_data:/data   # Shared Volume — подключён заранее, используется после миграции
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: on-failure
 
   # ── Redis ─────────────────────────────────────────────────────────────────
+  # ── PostgreSQL (System Storage) ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "111"
+      POSTGRES_DB: synthetic_data_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d synthetic_data_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: on-failure
+
   redis:
     image: redis:7-alpine
     ports:
@@ -41,21 +70,15 @@ services:
       retries: 5
 
   # ── Data Service (порт 8001) ───────────────────────────────────────────────
-  # Фаза 1. Раскомментировать после реализации services/data_service/.
-  # data_service:
-  #   build:
-  #     context: .
-  #     dockerfile: services/data_service/Dockerfile
-  #   ports:
-  #     - "8001:8001"
-  #   environment:
-  #     - REDIS_URL=redis://redis:6379/0
-  #   volumes:
-  #     - shared_data:/data
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   restart: on-failure
+  data_service:
+    build:
+      context: .
+      dockerfile: services/data_service/Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - shared_data:/data
+    restart: on-failure
 
   # ── Synthesis Service (порт 8002) ─────────────────────────────────────────
   # Фаза 4. Тяжёлый образ (torch + opacus + smartnoise + sdv).
@@ -101,4 +124,5 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
   shared_data:    # Shared Volume: /data/{datasets,splits,synth,models,reports}

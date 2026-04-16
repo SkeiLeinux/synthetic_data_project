@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 
     default_config: str = "configs/adult.yaml"
     db_disabled: bool = False
+    db_host: str = "localhost"   # переопределяется в Docker через DB_HOST=postgres
+    db_port: int = 5432
+    db_name: str = "synthetic_data_db"
+    db_user: str = "postgres"
+    db_password: str = "111"
+    db_schema: str = "synthetic_data_schema"
     redis_url: str = "redis://localhost:6379/0"
 
 

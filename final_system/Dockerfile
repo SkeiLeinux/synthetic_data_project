@@ -10,10 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# Torch устанавливаем отдельно с CPU-индексом —
-# GPU-версия весит ~2.5 ГБ и не нужна внутри контейнера без nvidia-docker
+# Torch с CUDA 12.8 — требует NVIDIA Container Toolkit на хосте
+# и секцию deploy.resources в docker-compose.yml
 RUN pip install --no-cache-dir torch~=2.11.0 \
-    --index-url https://download.pytorch.org/whl/cpu
+    --index-url https://download.pytorch.org/whl/cu128
 
 # Остальные зависимости (torch уже установлен, pip его пропустит)
 RUN pip install --no-cache-dir -r requirements.txt

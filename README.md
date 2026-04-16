@@ -32,6 +32,86 @@ PostgreSQL необходим только для ProcessRegistry; без нег
 
 ---
 
+## Запуск через Docker (рекомендуется)
+
+### Предварительные требования
+
+- Docker Desktop
+- (опционально) NVIDIA Container Toolkit — для обучения на GPU
+
+### Запуск
+
+```bash
+cd final_system
+docker compose up -d --build
+```
+
+Поднимаются четыре контейнера:
+
+| Контейнер | Порт | Описание |
+|---|---|---|
+| `app` | 8000 | FastAPI Gateway |
+| `data_service` | 8001 | Data Service (загрузка и сплит датасетов) |
+| `postgres` | 5432 | System Storage (ProcessRegistry) |
+| `redis` | 6379 | State Store (RunStore) |
+
+После запуска Swagger UI доступен на http://localhost:8000/docs
+
+### Подключение к PostgreSQL
+
+| Параметр | Значение |
+|---|---|
+| Host | `localhost` |
+| Port | `5432` |
+| Database | `synthetic_data_db` |
+| User | `postgres` |
+| Password | `111` |
+| Schema | `synthetic_data_schema` |
+
+**DBeaver / TablePlus / pgAdmin:** создать новое соединение PostgreSQL с параметрами выше.
+
+**psql:**
+```bash
+psql -h localhost -U postgres -d synthetic_data_db
+# пароль: 111
+
+# просмотр таблиц
+\dt synthetic_data_schema.*
+
+# история запусков
+SELECT process_id, status, start_time, end_time FROM synthetic_data_schema.processes ORDER BY start_time DESC;
+```
+
+**Из контейнера:**
+```bash
+docker exec -it final_system-postgres-1 psql -U postgres -d synthetic_data_db
+```
+
+### Переменные окружения (`.env`)
+
+| Переменная | Описание | Дефолт |
+|---|---|---|
+| `API_KEY` | Bearer-токен; если не задан — auth отключена | не задан |
+| `DB_DISABLED` | `true` — не использовать PostgreSQL | `false` |
+| `REDIS_URL` | URL Redis | `redis://redis:6379/0` |
+| `DATA_DIR` | Директория датасетов | `final_system/data/` |
+| `MODELS_DIR` | Директория моделей | `final_system/models/` |
+
+### GPU
+
+Для обучения на GPU убедитесь что установлен [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), затем пересоберите образ:
+
+```bash
+docker compose up -d --build app
+```
+
+Проверить доступность GPU внутри контейнера:
+```bash
+docker exec final_system-app-1 python -c "import torch; print(torch.cuda.get_device_name(0))"
+```
+
+---
+
 ## Быстрый старт
 
 ### Запуск REST API
@@ -243,13 +323,17 @@ python run_adult.py   # QUICK_TEST = True внутри файла (~2–3 мин
 
 ---
 
-## База данных (опционально)
+## База данных
 
+При запуске через Docker схема инициализируется автоматически из `db/init_db.sql`.
+
+При запуске без Docker:
 ```bash
 psql -U postgres -f db/init_db.sql
 ```
 
-Схема `synthetic_data_schema`, таблицы: `processes`, `process_logs`, `process_metadata`, `metadata_types`. Отключить через `--no-db` (CLI) или `DB_DISABLED=true` (API).
+Схема `synthetic_data_schema`, таблицы: `processes`, `process_logs`, `process_metadata`, `metadata_types`.
+Отключить через `--no-db` (CLI) или `DB_DISABLED=true` в `.env`.
 
 ---
 

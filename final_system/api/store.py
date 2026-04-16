@@ -176,6 +176,10 @@ class RunStore:
                     continue
         return None  # все попытки исчерпаны
 
+    def expire(self, run_id: str, seconds: int) -> None:
+        """Устанавливает TTL на запись. По истечении Redis удалит её автоматически."""
+        self._r.expire(_RUN_KEY_FMT.format(run_id), seconds)
+
     def delete(self, run_id: str) -> bool:
         key = _RUN_KEY_FMT.format(run_id)
         pipe = self._r.pipeline()
@@ -193,7 +197,7 @@ class RunStore:
         per_page: int = 20,
     ) -> tuple[List[RunRecord], int]:
         # Извлекаем все run_id из ZSET в порядке убывания даты создания
-        run_ids: List[str] = self._r.zrange(_RUN_INDEX, 0, -1, rev=True)
+        run_ids: List[str] = self._r.zrevrange(_RUN_INDEX, 0, -1)
 
         records: List[RunRecord] = []
         for run_id in run_ids:

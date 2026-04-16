@@ -21,18 +21,19 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GET /runs
+# GET /runs/active  — только Redis (активные и недавние запуски)
 # ──────────────────────────────────────────────────────────────────────────────
 
-@router.get("", response_model=RunListResponse)
-def list_runs(
-    page:         int = Query(1, ge=1),
-    per_page:     int = Query(20, ge=1, le=100),
+@router.get("/active", response_model=RunListResponse)
+def list_active_runs(
+    page:          int = Query(1, ge=1),
+    per_page:      int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
-    verdict:      Optional[str] = Query(None),
-    dataset_name: Optional[str] = Query(None),
+    verdict:       Optional[str] = Query(None),
+    dataset_name:  Optional[str] = Query(None),
     _: None = Depends(require_auth),
 ) -> RunListResponse:
+    """Возвращает только запуски из Redis (активные + завершённые в пределах TTL 1ч)."""
     items, total = run_store.list(
         status=status_filter,
         verdict=verdict,
@@ -42,6 +43,68 @@ def list_runs(
     )
     return RunListResponse(
         items=[RunSummary.from_record(r) for r in items],
+        meta={
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": math.ceil(total / per_page) if total else 0,
+        },
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GET /runs  — Redis + PostgreSQL (полная история)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.get("", response_model=RunListResponse)
+def list_all_runs(
+    page:          int = Query(1, ge=1),
+    per_page:      int = Query(20, ge=1, le=100),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    verdict:       Optional[str] = Query(None),
+    dataset_name:  Optional[str] = Query(None),
+    settings:      Settings = Depends(get_settings),
+    _: None = Depends(require_auth),
+) -> RunListResponse:
+    """Возвращает все запуски: Redis (активные) + PostgreSQL (история).
+
+    Если один и тот же run_id присутствует в обоих источниках,
+    берётся запись из Redis (содержит больше деталей).
+    """
+    # 1. Все записи из Redis
+    redis_items, _ = run_store.list(page=1, per_page=10_000)
+    redis_by_id: Dict[str, RunSummary] = {
+        r.run_id: RunSummary.from_record(r) for r in redis_items
+    }
+
+    # 2. Записи из PostgreSQL (только если БД включена)
+    pg_items: list[RunSummary] = []
+    if not settings.db_disabled:
+        pg_items = _list_pg_runs(settings)
+
+    # 3. Объединение: Redis имеет приоритет
+    merged: Dict[str, RunSummary] = {}
+    for item in pg_items:
+        merged[item.run_id] = item
+    merged.update(redis_by_id)  # Redis перезаписывает PG при совпадении run_id
+
+    all_items = sorted(merged.values(), key=lambda r: r.created_at, reverse=True)
+
+    # 4. Фильтрация
+    if status_filter:
+        all_items = [r for r in all_items if r.status.value == status_filter]
+    if verdict:
+        all_items = [r for r in all_items if r.verdict == verdict]
+    if dataset_name:
+        all_items = [r for r in all_items if r.dataset_name == dataset_name]
+
+    # 5. Пагинация
+    total = len(all_items)
+    offset = (page - 1) * per_page
+    page_items = all_items[offset: offset + per_page]
+
+    return RunListResponse(
+        items=page_items,
         meta={
             "total": total,
             "page": page,
@@ -101,6 +164,7 @@ def create_run(
         dataset_path=str(dataset_path),
         config_path=str(config_path),
         settings=settings,
+        quick_test=body.quick_test,
     )
 
     return RunSummary.from_record(record)
@@ -275,6 +339,28 @@ def generate_more_synthetic(
 # Вспомогательные функции
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _list_pg_runs(settings: Settings) -> list[RunSummary]:
+    """Читает все записи из таблицы processes в PostgreSQL и конвертирует в RunSummary."""
+    try:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(
+            f"postgresql+psycopg2://{settings.db_user}:{settings.db_password}"
+            f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+        )
+        schema = settings.db_schema
+        sql = sa_text(f"""
+            SELECT process_id, start_time, end_time, status,
+                   source_data_info, config_rout
+            FROM {schema}.processes
+            ORDER BY start_time DESC
+        """)
+        with engine.connect() as conn:
+            rows = conn.execute(sql).mappings().all()
+        engine.dispose()
+        return [RunSummary.from_pg_row(dict(row)) for row in rows]
+    except Exception:
+        return []  # БД недоступна — возвращаем пустой список, не роняем API
+
 def _get_or_404(run_id: str) -> RunRecord:
     record = run_store.get(run_id)
     if record is None:
@@ -305,6 +391,7 @@ def _execute_pipeline(
     dataset_path: str,
     config_path:  str,
     settings:     Settings,
+    quick_test:   bool = False,
 ) -> None:
     """
     Выполняется в фоновом потоке FastAPI BackgroundTasks.
@@ -329,8 +416,23 @@ def _execute_pipeline(
         record = run_store.get(run_id)
 
         # Загружаем конфиг
+        from config_loader import apply_quick_test
         cfg = load_config(config_path)
+        if quick_test:
+            cfg = apply_quick_test(cfg)
         cfg_raw = yaml.safe_load(open(config_path, encoding="utf-8"))
+
+        # ProcessRegistry — пишет исторические данные в PostgreSQL по завершению
+        registry = None
+        if not settings.db_disabled and cfg.database is not None:
+            from registry.process_registry import ProcessRegistry
+            cfg.database.host = settings.db_host  # docker: postgres, local: localhost
+            try:
+                registry = ProcessRegistry(cfg)
+                if not registry.test_connection():
+                    registry = None
+            except Exception:
+                registry = None  # БД недоступна — продолжаем без неё
         run_store.update(run_id, config_snapshot=cfg_raw)
 
         # Загружаем датасет
@@ -389,6 +491,7 @@ def _execute_pipeline(
             direct_identifiers=cfg.data_schema.direct_identifiers,
             drop_high_cardinality=cfg.data_schema.drop_high_cardinality,
             cardinality_threshold=cfg.data_schema.cardinality_threshold,
+            registry=registry,
         )
 
         synth_df.to_csv(synth_path, index=False)
@@ -412,6 +515,11 @@ def _execute_pipeline(
         if record and record.webhook_url:
             _send_webhook(record)
 
+        # Запись сохранена в PostgreSQL — даём 1 час на чтение через API,
+        # затем Redis удалит её автоматически
+        if registry is not None:
+            run_store.expire(run_id, 3600)
+
     except Exception as exc:
         run_store.update(
             run_id,
@@ -419,6 +527,8 @@ def _execute_pipeline(
             error_message=str(exc),
             finished_at=datetime.now(timezone.utc),
         )
+        if registry is not None:
+            run_store.expire(run_id, 3600)
 
 
 def _send_webhook(record: RunRecord) -> None:

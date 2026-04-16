@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, HttpUrl, field_validator
@@ -15,6 +16,7 @@ class RunCreate(BaseModel):
     dataset_name: str
     config_name:  str
     save_model:   bool = False
+    quick_test:   bool = False
     webhook_url:  Optional[str] = None
     n_synth_rows: Optional[int] = None
 
@@ -49,6 +51,52 @@ class RunSummary(BaseModel):
             started_at=r.started_at,
             finished_at=r.finished_at,
             duration_sec=r.duration_sec,
+        )
+
+    @classmethod
+    def from_pg_row(cls, row: Dict[str, Any]) -> "RunSummary":
+        """Создаёт RunSummary из строки таблицы processes (PostgreSQL)."""
+        raw_status: str = row.get("status") or "ERROR"
+        if raw_status.startswith("COMPLETED_"):
+            verdict: Optional[str] = raw_status[len("COMPLETED_"):]
+            status = RunStatus.completed
+        elif raw_status == "RUNNING":
+            verdict = None
+            status = RunStatus.running
+        else:
+            verdict = None
+            status = RunStatus.failed
+
+        src = row.get("source_data_info") or ""
+        dataset_name = Path(src).stem if src else "unknown"
+
+        cfg = row.get("config_rout") or ""
+        config_name = Path(cfg).stem if cfg else "unknown"
+
+        def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+            if dt is None:
+                return None
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt
+
+        started_at = _as_utc(row.get("start_time"))
+        finished_at = _as_utc(row.get("end_time"))
+        duration_sec: Optional[float] = (
+            (finished_at - started_at).total_seconds()
+            if started_at and finished_at else None
+        )
+
+        return cls(
+            run_id=str(row["process_id"]),
+            status=status,
+            verdict=verdict,
+            dataset_name=dataset_name,
+            config_name=config_name,
+            created_at=started_at or datetime.now(timezone.utc),
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_sec=duration_sec,
         )
 
 
