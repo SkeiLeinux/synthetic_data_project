@@ -1,0 +1,11 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+pandas>=2.2.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+PyYAML>=6.0
+opacus~=0.14.0
+smartnoise-synth>=1.0.6
+sdv~=1.35.1

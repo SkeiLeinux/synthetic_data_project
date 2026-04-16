@@ -87,21 +87,28 @@ services:
 
   # ── Synthesis Service (порт 8002) ─────────────────────────────────────────
   # Фаза 4. Тяжёлый образ (torch + opacus + smartnoise + sdv).
-  # synthesis_service:
-  #   build:
-  #     context: .
-  #     dockerfile: services/synthesis_service/Dockerfile
-  #   ports:
-  #     - "8002:8002"
-  #   environment:
-  #     - REDIS_URL=redis://redis:6379/0
-  #   volumes:
-  #     - shared_data:/data
-  #     - ./configs:/app/configs
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   restart: on-failure
+  synthesis_service:
+    build:
+      context: .
+      dockerfile: services/synthesis_service/Dockerfile
+    ports:
+      - "8002:8002"
+    volumes:
+      - shared_data:/data
+      - ./configs:/app/configs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
 
   # ── Evaluation Service (порт 8003) ────────────────────────────────────────
   # Фаза 3. Лёгкий образ (sklearn/scipy, без torch).

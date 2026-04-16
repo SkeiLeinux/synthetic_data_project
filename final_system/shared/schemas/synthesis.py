@@ -23,8 +23,14 @@ class SynthesisJobCreate(BaseModel):
     """Тело запроса POST /jobs."""
     split_id: str
     config_name: str
-    n_rows: Optional[int] = None    # None = взять из конфига
+    n_rows: Optional[int] = None    # None = совпадает с размером train
     save_model: bool = False
+
+
+class SampleRequest(BaseModel):
+    """Тело запроса POST /models/{model_id}/sample."""
+    n_rows: int
+    job_id: Optional[str] = None   # если задан — synth сохраняется в synth/{job_id}/
 
 
 class SynthesisJobSummary(BaseModel):
