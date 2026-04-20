@@ -23,23 +23,29 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-# ── Импорты dataclass-конфигов из модулей ─────────────────────────────────────
-# Загружаем оригинальные dataclass'ы, чтобы config_loader возвращал
-# именно те объекты, которые ожидают synthesizer, evaluator, reporter.
-from synthesizer.dp_ctgan import DPCTGANConfig
-from synthesizer.dp_tvae import DPTVAEConfig
-from synthesizer.sdv_generators import CTGANConfig, TVAEConfig, CopulaGANConfig
-from evaluator.privacy.privacy_evaluator import PrivacyConfig
-from evaluator.utility.utility_evaluator import UtilityConfig
-from reporter.reporter import VerdictThresholds
-
-# Тип конфига генератора (union всех вариантов)
-GeneratorConfig = DPCTGANConfig | DPTVAEConfig | CTGANConfig | TVAEConfig | CopulaGANConfig
+# config_loader — чистый YAML-парсер без зависимостей на ML-библиотеки.
+#
+# Импорты synthesizer / evaluator / reporter намеренно вынесены ВНУТРЬ методов
+# (lazy imports), чтобы:
+#   1. Gateway мог импортировать config_loader не имея torch/opacus/smartnoise.
+#   2. Добавление нового генератора не требовало перебилда Gateway —
+#      достаточно изменить только synthesis_service.
+#
+# Схема зависимостей:
+#   config_loader  ← (импортирует) ← Gateway, synthesis_service, CLI, pipeline
+#   synthesizer/*  ← (импортирует) ← synthesis_service, pipeline (monolith)
+#
+# При добавлении нового генератора:
+#   1. Создать synthesizer/my_generator.py
+#   2. Добавить ветку в synthesis_service/router.py → _build_generator()
+#   3. Для monolith/CLI: добавить to_mygenerator_config() с lazy-импортом ниже
+#      и ветку в pipeline.py → build_generator()
+#   Шаги 1–2 не требуют пересборки Gateway.
 
 
 # ==============================================================================
@@ -168,12 +174,12 @@ class GeneratorYamlConfig(BaseModel):
     @field_validator("generator_type")
     @classmethod
     def check_generator_type(cls, v: str) -> str:
-        if v not in _ALL_GENERATOR_TYPES:
-            raise ValueError(
-                f"generator_type должен быть одним из {sorted(_ALL_GENERATOR_TYPES)}, "
-                f"получено: {v!r}"
-            )
-        return v
+        # Мягкая проверка: тип должен быть непустой строкой.
+        # Жёсткую валидацию против списка делает synthesis_service/_build_generator(),
+        # чтобы добавление нового генератора не требовало изменений в config_loader.
+        if not v or not v.strip():
+            raise ValueError("generator_type не может быть пустым")
+        return v.strip()
 
     @field_validator("epsilon")
     @classmethod
@@ -192,7 +198,8 @@ class GeneratorYamlConfig(BaseModel):
                 )
         return self
 
-    def to_dpctgan_config(self) -> DPCTGANConfig:
+    def to_dpctgan_config(self) -> Any:
+        from synthesizer.dp_ctgan import DPCTGANConfig
         return DPCTGANConfig(
             epsilon=self.epsilon,
             preprocessor_eps=self.preprocessor_eps,
@@ -218,7 +225,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_dptvae_config(self) -> DPTVAEConfig:
+    def to_dptvae_config(self) -> Any:
+        from synthesizer.dp_tvae import DPTVAEConfig
         return DPTVAEConfig(
             sigma=self.sigma,
             delta=self.delta,
@@ -234,7 +242,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_ctgan_config(self) -> CTGANConfig:
+    def to_ctgan_config(self) -> Any:
+        from synthesizer.sdv_generators import CTGANConfig
         return CTGANConfig(
             epochs=self.epochs,
             batch_size=self.batch_size,
@@ -253,7 +262,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_tvae_config(self) -> TVAEConfig:
+    def to_tvae_config(self) -> Any:
+        from synthesizer.sdv_generators import TVAEConfig
         return TVAEConfig(
             epochs=self.epochs,
             batch_size=self.batch_size,
@@ -267,7 +277,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_copulagan_config(self) -> CopulaGANConfig:
+    def to_copulagan_config(self) -> Any:
+        from synthesizer.sdv_generators import CopulaGANConfig
         return CopulaGANConfig(
             epochs=self.epochs,
             batch_size=self.batch_size,
@@ -303,7 +314,8 @@ class UtilityYamlConfig(BaseModel):
             )
         return v
 
-    def to_utility_config(self) -> UtilityConfig:
+    def to_utility_config(self) -> Any:
+        from evaluator.utility.utility_evaluator import UtilityConfig
         return UtilityConfig(
             target_column=self.target_column,
             task_type=self.task_type,  # type: ignore[arg-type]
@@ -322,7 +334,8 @@ class PrivacyYamlConfig(BaseModel):
     distance_sample_size: int = 2000
     mia_sample_size: int = 1000
 
-    def to_privacy_config(self) -> PrivacyConfig:
+    def to_privacy_config(self) -> Any:
+        from evaluator.privacy.privacy_evaluator import PrivacyConfig
         return PrivacyConfig(
             quasi_identifiers=self.quasi_identifiers,
             sensitive_attribute=self.sensitive_attribute,
@@ -342,7 +355,8 @@ class ThresholdsYamlConfig(BaseModel):
     require_dp_enabled: bool = True
     max_spent_epsilon: Optional[float] = None
 
-    def to_verdict_thresholds(self) -> VerdictThresholds:
+    def to_verdict_thresholds(self) -> Any:
+        from reporter.reporter import VerdictThresholds
         return VerdictThresholds(
             max_utility_loss=self.max_utility_loss,
             max_mean_jsd=self.max_mean_jsd,
@@ -404,10 +418,10 @@ class AppConfig(BaseModel):
         """Возвращает тип генератора из конфига."""
         return self.generator.generator_type
 
-    def get_generator_config(self) -> "GeneratorConfig":
-        """
-        Возвращает конфиг в типе, соответствующем generator_type.
-        pipeline.py использует его через build_generator().
+    def get_generator_config(self) -> Any:
+        """Возвращает конфиг генератора. Используется только в monolith/CLI режиме.
+        Lazy-импорты внутри to_*_config() гарантируют, что synthesizer
+        не загружается при импорте config_loader в Gateway.
         """
         t = self.generator.generator_type
         if t == "dpctgan":
@@ -423,13 +437,13 @@ class AppConfig(BaseModel):
         else:
             raise ValueError(f"Неизвестный generator_type: {t!r}")
 
-    def get_privacy_config(self) -> PrivacyConfig:
+    def get_privacy_config(self) -> Any:
         return self.privacy.to_privacy_config()
 
-    def get_utility_config(self) -> UtilityConfig:
+    def get_utility_config(self) -> Any:
         return self.utility.to_utility_config()
 
-    def get_thresholds(self) -> VerdictThresholds:
+    def get_thresholds(self) -> Any:
         return self.thresholds.to_verdict_thresholds()
 
     def get_n_synth_rows(self, n_train_rows: int) -> int:

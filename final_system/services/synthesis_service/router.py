@@ -29,22 +29,119 @@ logger = logging.getLogger(__name__)
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _build_generator(gen_yaml: GeneratorYamlConfig):
-    """Dispatch GeneratorYamlConfig → конкретный генератор."""
-    from synthesizer.dp_ctgan import DPCTGANGenerator
-    from synthesizer.dp_tvae import DPTVAEGenerator
-    from synthesizer.sdv_generators import CTGANGenerator, TVAEGenerator, CopulaGANGenerator
+    """Dispatch GeneratorYamlConfig → конкретный генератор.
 
+    Конфиг каждого генератора строится здесь напрямую из полей gen_yaml —
+    без вызова gen_yaml.to_*_config(). Это полностью изолирует synthesis_service:
+    добавление нового генератора требует только правок в этом файле и нового
+    synthesizer/*.py, без изменений в config_loader.py (и без перебилда Gateway).
+    """
     t = gen_yaml.generator_type
+
     if t == "dpctgan":
-        return DPCTGANGenerator(gen_yaml.to_dpctgan_config())
+        from synthesizer.dp_ctgan import DPCTGANGenerator, DPCTGANConfig
+        cfg = DPCTGANConfig(
+            epsilon=gen_yaml.epsilon,
+            preprocessor_eps=gen_yaml.preprocessor_eps,
+            delta=gen_yaml.delta,
+            sigma=gen_yaml.sigma,
+            max_per_sample_grad_norm=gen_yaml.max_per_sample_grad_norm,
+            epochs=gen_yaml.epochs,
+            batch_size=gen_yaml.batch_size,
+            discriminator_steps=gen_yaml.discriminator_steps,
+            pac=gen_yaml.pac,
+            embedding_dim=gen_yaml.embedding_dim,
+            generator_dim=tuple(gen_yaml.generator_dim),
+            discriminator_dim=tuple(gen_yaml.discriminator_dim),
+            generator_lr=gen_yaml.generator_lr,
+            generator_decay=gen_yaml.generator_decay,
+            discriminator_lr=gen_yaml.discriminator_lr,
+            discriminator_decay=gen_yaml.discriminator_decay,
+            cuda=gen_yaml.cuda,
+            verbose=gen_yaml.verbose,
+            disabled_dp=gen_yaml.disabled_dp,
+            loss=gen_yaml.loss,
+            nullable=gen_yaml.nullable,
+            random_seed=gen_yaml.random_seed,
+        )
+        return DPCTGANGenerator(cfg)
+
     elif t == "dptvae":
-        return DPTVAEGenerator(gen_yaml.to_dptvae_config())
+        from synthesizer.dp_tvae import DPTVAEGenerator, DPTVAEConfig
+        cfg = DPTVAEConfig(
+            sigma=gen_yaml.sigma,
+            delta=gen_yaml.delta,
+            max_grad_norm=gen_yaml.max_grad_norm,
+            embedding_dim=gen_yaml.embedding_dim,
+            compress_dims=tuple(gen_yaml.compress_dims),
+            decompress_dims=tuple(gen_yaml.decompress_dims),
+            epochs=gen_yaml.epochs,
+            batch_size=gen_yaml.batch_size,
+            l2scale=gen_yaml.l2scale,
+            loss_factor=gen_yaml.loss_factor,
+            cuda=gen_yaml.cuda,
+            random_seed=gen_yaml.random_seed,
+        )
+        return DPTVAEGenerator(cfg)
+
     elif t == "ctgan":
-        return CTGANGenerator(gen_yaml.to_ctgan_config())
+        from synthesizer.sdv_generators import CTGANGenerator, CTGANConfig
+        cfg = CTGANConfig(
+            epochs=gen_yaml.epochs,
+            batch_size=gen_yaml.batch_size,
+            discriminator_steps=gen_yaml.discriminator_steps,
+            pac=gen_yaml.pac,
+            embedding_dim=gen_yaml.embedding_dim,
+            generator_dim=tuple(gen_yaml.generator_dim),
+            discriminator_dim=tuple(gen_yaml.discriminator_dim),
+            generator_lr=gen_yaml.generator_lr,
+            generator_decay=gen_yaml.generator_decay,
+            discriminator_lr=gen_yaml.discriminator_lr,
+            discriminator_decay=gen_yaml.discriminator_decay,
+            log_frequency=gen_yaml.log_frequency,
+            cuda=gen_yaml.cuda,
+            verbose=gen_yaml.verbose,
+            random_seed=gen_yaml.random_seed,
+        )
+        return CTGANGenerator(cfg)
+
     elif t == "tvae":
-        return TVAEGenerator(gen_yaml.to_tvae_config())
+        from synthesizer.sdv_generators import TVAEGenerator, TVAEConfig
+        cfg = TVAEConfig(
+            epochs=gen_yaml.epochs,
+            batch_size=gen_yaml.batch_size,
+            embedding_dim=gen_yaml.embedding_dim,
+            compress_dims=tuple(gen_yaml.compress_dims),
+            decompress_dims=tuple(gen_yaml.decompress_dims),
+            l2scale=gen_yaml.l2scale,
+            loss_factor=gen_yaml.loss_factor,
+            cuda=gen_yaml.cuda,
+            verbose=gen_yaml.verbose,
+            random_seed=gen_yaml.random_seed,
+        )
+        return TVAEGenerator(cfg)
+
     elif t == "copulagan":
-        return CopulaGANGenerator(gen_yaml.to_copulagan_config())
+        from synthesizer.sdv_generators import CopulaGANGenerator, CopulaGANConfig
+        cfg = CopulaGANConfig(
+            epochs=gen_yaml.epochs,
+            batch_size=gen_yaml.batch_size,
+            discriminator_steps=gen_yaml.discriminator_steps,
+            pac=gen_yaml.pac,
+            embedding_dim=gen_yaml.embedding_dim,
+            generator_dim=tuple(gen_yaml.generator_dim),
+            discriminator_dim=tuple(gen_yaml.discriminator_dim),
+            generator_lr=gen_yaml.generator_lr,
+            generator_decay=gen_yaml.generator_decay,
+            discriminator_lr=gen_yaml.discriminator_lr,
+            discriminator_decay=gen_yaml.discriminator_decay,
+            log_frequency=gen_yaml.log_frequency,
+            cuda=gen_yaml.cuda,
+            verbose=gen_yaml.verbose,
+            random_seed=gen_yaml.random_seed,
+        )
+        return CopulaGANGenerator(cfg)
+
     else:
         raise ValueError(f"Неизвестный generator_type: {t!r}")
 
