@@ -1,11 +1,27 @@
+# Synthesis Service: обучение генераторов и семплирование.
+#
+# torch устанавливается отдельно в Dockerfile через --index-url
+# (https://download.pytorch.org/whl/cu128) — здесь не указан намеренно,
+# чтобы pip не переустановил CPU-версию поверх CUDA-сборки.
+
+# ─── API ─────────────────────────────────────────────────────
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
+
+# ─── Validation ──────────────────────────────────────────────
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+PyYAML>=6.0    # config_loader.GeneratorYamlConfig
+
+# ─── Core ────────────────────────────────────────────────────
 pandas>=2.2.0
 numpy>=1.26.0
-scikit-learn>=1.4.0
-PyYAML>=6.0
+
+# ─── Генераторы ───────────────────────────────────────────────
+# opacus 0.14 требуется SmartNoise 1.0.6; 0.15+ несовместим.
 opacus~=0.14.0
-smartnoise-synth>=1.0.6
+smartnoise-synth==1.0.6
 sdv~=1.35.1
+
+# ─── Прогресс-бары обучения ──────────────────────────────────
+tqdm>=4.67

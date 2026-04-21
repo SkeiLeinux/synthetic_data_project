@@ -1,24 +1,23 @@
-# Gateway (api/) — тонкий оркестратор микросервисов.
-# Тяжёлые ML-зависимости (torch, sdv, opacus, smartnoise, sdmetrics)
-# живут внутри synthesis_service и сюда не ставятся.
-
-# ─── Core ────────────────────────────────────────────────────
-numpy>=1.26.0
-pandas>=2.2.0
+# Gateway (api/ + config_loader.py + shared/) — тонкий оркестратор.
+# Тяжёлые ML-зависимости (torch, sdv, opacus, smartnoise) живут в synthesis_service.
 
 # ─── API ─────────────────────────────────────────────────────
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
-starlette>=0.37
 python-multipart>=0.0.9
 httpx>=0.27
 
-# ─── Config / Serialization ──────────────────────────────────
-PyYAML>=6.0
+# ─── Config / Validation ─────────────────────────────────────
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+PyYAML>=6.0
 
-# ─── Storage ─────────────────────────────────────────────────
+# ─── State store ─────────────────────────────────────────────
 redis>=5.0
+
+# ─── ProcessRegistry + экспорт синтетики в PostgreSQL ────────
 SQLAlchemy>=2.0,<3.0
 psycopg2-binary>=2.9
+
+# ─── CSV I/O (ответы /runs/{id}/synthetic, /models/{id}/samples) ───
+pandas>=2.2.0

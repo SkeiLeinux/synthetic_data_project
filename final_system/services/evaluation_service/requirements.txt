@@ -1,8 +1,18 @@
+# Evaluation Service: метрики приватности (DCR, NNDR, MIA, k/l/t)
+# и полезности (JSD, TVD, TSTR/TRTR). Без torch/sdv/opacus.
+
+# ─── API ─────────────────────────────────────────────────────
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
+
+# ─── Validation ──────────────────────────────────────────────
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+
+# ─── Core ────────────────────────────────────────────────────
 pandas>=2.2.0
 numpy>=1.26.0
-scipy>=1.13.0
-scikit-learn>=1.4.0
+
+# ─── Метрики ─────────────────────────────────────────────────
+scipy>=1.13.0           # jensenshannon
+scikit-learn>=1.4.0     # MinMaxScaler, RandomForest, cross_val_score

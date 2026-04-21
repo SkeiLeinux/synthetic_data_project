@@ -1,10 +1,19 @@
+# Data Service: загрузка CSV/Postgres, предобработка, стратифицированный holdout-сплит.
+
+# ─── API ─────────────────────────────────────────────────────
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ─── Validation ──────────────────────────────────────────────
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+
+# ─── Предобработка ────────────────────────────────────────────
 pandas>=2.2.0
 numpy>=1.26.0
-scikit-learn>=1.4.0
-python-multipart>=0.0.9
+scikit-learn>=1.4.0    # train_test_split
+
+# ─── Импорт из PostgreSQL (data_import.type: postgres) ────────
 SQLAlchemy>=2.0,<3.0
 psycopg2-binary>=2.9
