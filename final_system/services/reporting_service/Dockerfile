@@ -9,9 +9,6 @@ WORKDIR /app
 COPY services/reporting_service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Логика вердикта и сборки отчёта
-COPY reporter/reporter.py ./reporter/reporter.py
-COPY reporter/__init__.py ./reporter/__init__.py
 # Общие Pydantic-схемы
 COPY shared/ ./shared/
 # Код самого сервиса

@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # -> final_system/
-from reporter.reporter import Reporter, VerdictThresholds
+from services.reporting_service.reporter import Reporter, VerdictThresholds
 from shared.log_context import set_run_id
 from shared.schemas.reporting import ReportRequest, ReportResponse
 from services.reporting_service.settings import Settings, get_settings

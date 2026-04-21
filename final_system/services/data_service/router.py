@@ -9,11 +9,12 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # → final_system/
 from data_service.processor import DataProcessor
@@ -121,6 +122,53 @@ async def upload_dataset(
         uploaded_at=datetime.now(timezone.utc),
     )
     (dataset_dir / "meta.json").write_text(meta.model_dump_json(), encoding="utf-8")
+    return meta
+
+
+# ── POST /datasets/from-db ────────────────────────────────────────────────────
+
+class DatasetFromDbRequest(BaseModel):
+    dsn: str            # PostgreSQL DSN (передаётся gateway из env, не хранится)
+    query: str          # SQL-запрос для выборки данных
+    name: Optional[str] = None
+
+@router.post("/datasets/from-db", response_model=DatasetMeta, status_code=status.HTTP_201_CREATED,
+             summary="Импортировать датасет из PostgreSQL")
+def upload_dataset_from_db(
+    body: DatasetFromDbRequest,
+    settings: Settings = Depends(get_settings),
+) -> DatasetMeta:
+    try:
+        import sqlalchemy as sa
+        engine = sa.create_engine(body.dsn)
+        with engine.connect() as conn:
+            df = pd.read_sql(sa.text(body.query), conn)
+        engine.dispose()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail={"code": "DB_ERROR", "message": str(e)})
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail={"code": "VALIDATION_ERROR", "message": "Запрос вернул пустой датасет"})
+
+    dataset_id  = str(uuid.uuid4())
+    dataset_dir = _dataset_dir(settings, dataset_id)
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    (dataset_dir / "raw.csv").write_bytes(csv_bytes)
+
+    name = (body.name or f"db_import_{dataset_id[:8]}") + ".csv"
+    meta = DatasetMeta(
+        dataset_id=dataset_id,
+        filename=name,
+        rows=len(df),
+        columns=len(df.columns),
+        file_size_bytes=len(csv_bytes),
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    (dataset_dir / "meta.json").write_text(meta.model_dump_json(), encoding="utf-8")
+    logger.info("Dataset imported from DB: query=%r dataset_id=%s rows=%d cols=%d",
+                body.query[:80], dataset_id, len(df), len(df.columns))
     return meta
 
 

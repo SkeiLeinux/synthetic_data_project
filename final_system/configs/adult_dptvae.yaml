@@ -16,18 +16,16 @@ paths:
   logs: logs/app.log
   output_dir: reporter/reports
 
-database:
-  host: localhost
-  port: 5432
-  dbname: synthetic_data_db
-  user: postgres
-  password: "111"
-  schema: synthetic_data_schema
+
+data_import:
+  type: csv
+  path: data/adult.csv
+
+data_export:
+  type: none
 
 pipeline:
   dataset_name: adult_census_dptvae
-  data_source: csv
-  data_path: data/adult.csv
   sample_size: 0
   n_synth_rows: 0
   run_preprocessing: true

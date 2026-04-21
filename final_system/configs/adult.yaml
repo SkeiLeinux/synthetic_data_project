@@ -15,47 +15,36 @@ paths:
   logs: logs/app.log
   output_dir: reporter/reports
 
-# ── Внутренняя БД сервиса (System Storage) ────────────────────────────────────
-# Используется ProcessRegistry для хранения процессов, логов и метаданных.
-# Инициализируется через db/init_db.sql.
-database:
-  host: localhost
-  port: 5432
-  dbname: synthetic_data_db
-  user: postgres
-  password: "111"
-  schema: synthetic_data_schema
+# ── Источник входных данных ───────────────────────────────────────────────────
+# type: csv      — загрузка из CSV-файла (path обязателен)
+# type: postgres — загрузка из БД через env-переменную с DSN (dsn_env + query обязательны)
+#
+# Credentials НЕ хранятся в конфиге. Для postgres задайте переменную окружения:
+#   DB_IMPORT_DSN=postgresql://user:password@host:5432/dbname
+data_import:
+  type: csv
+  path: data/adult.csv
+  # Для PostgreSQL (раскомментировать когда БД готова):
+  # dsn_env: DB_IMPORT_DSN          # имя env-переменной с DSN
+  # query: "SELECT * FROM table"    # SQL-запрос для выборки данных
 
-# ── Источник данных компании (Data Storage — чтение) ─────────────────────────
-# Используется DataIO.load_from_db().
-# Если данные загружаются из CSV — эту секцию можно не заполнять.
-data_source:
-  host: localhost
-  port: 5432
-  dbname: company_data_db
-  user: postgres
-  password: "111"
-
-# ── Целевое хранилище синтетики (Data Storage — запись) ──────────────────────
-# Используется DataIO.save_to_db().
-# Если синтетика сохраняется в CSV — эту секцию можно не заполнять.
-data_target:
-  host: localhost
-  port: 5432
-  dbname: company_data_db
-  user: postgres
-  password: "111"
+# ── Назначение синтетических данных ──────────────────────────────────────────
+# type: none     — только сохранение в CSV на shared volume (по умолчанию)
+# type: csv      — явное сохранение в CSV (эквивалентно none)
+# type: postgres — дополнительная запись в таблицу БД через env-переменную с DSN
+#
+# Credentials НЕ хранятся в конфиге. Для postgres задайте переменную окружения:
+#   DB_EXPORT_DSN=postgresql://user:password@host:5432/dbname
+data_export:
+  type: none
+  # Для PostgreSQL (раскомментировать когда БД готова):
+  # dsn_env: DB_EXPORT_DSN          # имя env-переменной с DSN
+  # table: synthetic_adult          # целевая таблица
+  # if_exists: replace              # replace | append | fail
 
 # ── Параметры пайплайна ───────────────────────────────────────────────────────
 pipeline:
   dataset_name: adult_census
-
-  # Источник данных: csv | db
-  # При data_source: db заполнить секцию data_source: и указать db_query.
-  data_source: csv
-  data_path: data/adult.csv
-  db_query: null            # пример: "SELECT * FROM raw_data WHERE year = 2024"
-
   sample_size: 0            # 0 = взять все строки
   n_synth_rows: 0           # 0 = совпадает с размером обучающей выборки
   run_preprocessing: true

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Пути (относительно final_system/)
     base_dir: Path = Path(__file__).parent.parent
     data_dir: Path = Path(__file__).parent.parent / "data"
-    models_dir: Path = Path(__file__).parent.parent / "models"
+    models_dir: Path = Path("/data") / "models"
     configs_dir: Path = Path(__file__).parent.parent / "configs"
     reports_dir: Path = Path(__file__).parent.parent / "reporter" / "reports"
     log_path: str = "logs/app.log"
@@ -46,11 +46,11 @@ class Settings(BaseSettings):
 
     default_config: str = "configs/adult.yaml"
     db_disabled: bool = False
-    db_host: str = "localhost"   # переопределяется в Docker через DB_HOST=postgres
+    db_host: str = "localhost"
     db_port: int = 5432
     db_name: str = "synthetic_data_db"
     db_user: str = "postgres"
-    db_password: str = "111"
+    db_password: str = ""        # обязательно задать в .env: DB_PASSWORD=...
     db_schema: str = "synthetic_data_schema"
     redis_url: str = "redis://localhost:6379/0"
 

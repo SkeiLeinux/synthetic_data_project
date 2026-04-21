@@ -52,46 +52,76 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Pydantic-схемы для валидации YAML
 # ==============================================================================
 
-class DBConfig(BaseModel):
-    """Параметры подключения к PostgreSQL."""
-    host: str = "localhost"
-    port: int = 5432
-    dbname: str
-    user: str
-    password: str
-    schema_name: str = Field("public", alias="schema")
+class DataImportConfig(BaseModel):
+    """Источник входных данных для пайплайна."""
+    type: str = "csv"               # csv | postgres
+    path: str = ""                  # путь к CSV (для type: csv)
+    dsn_env: Optional[str] = None   # имя env-переменной с DSN (для type: postgres)
+    query: Optional[str] = None     # SQL-запрос (для type: postgres)
 
-    model_config = {"populate_by_name": True}
+    @field_validator("type")
+    @classmethod
+    def check_type(cls, v: str) -> str:
+        if v not in ("csv", "postgres"):
+            raise ValueError(f"data_import.type должен быть csv или postgres, получено: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def check_params(self) -> "DataImportConfig":
+        if self.type == "csv" and not self.path:
+            raise ValueError("data_import.path обязателен при type: csv")
+        if self.type == "postgres":
+            if not self.dsn_env:
+                raise ValueError("data_import.dsn_env обязателен при type: postgres")
+            if not self.query:
+                raise ValueError("data_import.query обязателен при type: postgres")
+        return self
+
+
+class DataExportConfig(BaseModel):
+    """Назначение для синтетических данных после пайплайна."""
+    type: str = "none"              # none | csv | postgres
+    dsn_env: Optional[str] = None   # имя env-переменной с DSN (для type: postgres)
+    table: Optional[str] = None     # целевая таблица (для type: postgres)
+    if_exists: str = "replace"      # replace | append | fail
+
+    @field_validator("type")
+    @classmethod
+    def check_type(cls, v: str) -> str:
+        if v not in ("none", "csv", "postgres"):
+            raise ValueError(f"data_export.type должен быть none, csv или postgres, получено: {v!r}")
+        return v
+
+    @field_validator("if_exists")
+    @classmethod
+    def check_if_exists(cls, v: str) -> str:
+        if v not in ("replace", "append", "fail"):
+            raise ValueError(f"data_export.if_exists должен быть replace, append или fail, получено: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def check_params(self) -> "DataExportConfig":
+        if self.type == "postgres":
+            if not self.dsn_env:
+                raise ValueError("data_export.dsn_env обязателен при type: postgres")
+            if not self.table:
+                raise ValueError("data_export.table обязателен при type: postgres")
+        return self
 
 
 class PathsConfig(BaseModel):
     logs: str = "logs/app.log"
-    output_dir: str = "reporter/reports"
+    output_dir: str = "archive/reporter/reports"
 
 
 class PipelineConfig(BaseModel):
     dataset_name: str = "dataset"
-
-    # Источник данных: csv | db
-    data_source: str = "csv"
-    data_path: str = ""           # путь к CSV; нужен если data_source = csv
-    db_query: Optional[str] = None  # SQL-запрос; нужен если data_source = db
-
     sample_size: int = 0          # 0 = все строки
     n_synth_rows: int = 0         # 0 = совпадает с размером train
     run_preprocessing: bool = True
     holdout_size: float = 0.2
     random_state: int = 42
     max_iterations: int = 1       # максимум повторных обучений при вердикте FAIL
-
-    @field_validator("data_source")
-    @classmethod
-    def check_data_source(cls, v: str) -> str:
-        if v not in ("csv", "db"):
-            raise ValueError(
-                f"data_source должен быть csv или db, получено: {v!r}"
-            )
-        return v
 
     @field_validator("holdout_size")
     @classmethod
@@ -101,14 +131,6 @@ class PipelineConfig(BaseModel):
                 f"holdout_size должен быть в (0, 1), получено: {v}"
             )
         return v
-
-    @model_validator(mode="after")
-    def check_source_params(self) -> "PipelineConfig":
-        if self.data_source == "csv" and not self.data_path:
-            raise ValueError("data_path обязателен при data_source: csv")
-        if self.data_source == "db" and not self.db_query:
-            raise ValueError("db_query обязателен при data_source: db")
-        return self
 
 
 _DP_GENERATOR_TYPES = {"dpctgan", "dptvae"}
@@ -357,7 +379,7 @@ class ThresholdsYamlConfig(BaseModel):
     max_spent_epsilon: Optional[float] = None
 
     def to_verdict_thresholds(self) -> Any:
-        from reporter.reporter import VerdictThresholds
+        from services.reporting_service.reporter import VerdictThresholds
         return VerdictThresholds(
             max_utility_loss=self.max_utility_loss,
             max_mean_jsd=self.max_mean_jsd,
@@ -403,9 +425,8 @@ class AppConfig(BaseModel):
     готовые к использованию объекты для run_pipeline().
     """
     paths: PathsConfig = Field(default_factory=PathsConfig)
-    database: Optional[DBConfig] = None
-    data_source: Optional[DBConfig] = None
-    data_target: Optional[DBConfig] = None
+    data_import: DataImportConfig = Field(default_factory=lambda: DataImportConfig(type="csv", path=""))
+    data_export: DataExportConfig = Field(default_factory=lambda: DataExportConfig(type="none"))
     pipeline: PipelineConfig
     generator: GeneratorYamlConfig = Field(default_factory=GeneratorYamlConfig)
     utility: UtilityYamlConfig

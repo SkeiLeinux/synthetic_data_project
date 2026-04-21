@@ -44,15 +44,37 @@ services:
     image: postgres:16-alpine
     ports:
       - "5433:5432"
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: "111"
-      POSTGRES_DB: synthetic_data_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d synthetic_data_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: on-failure
+
+  # ── User DB (порт 5434) ──────────────────────────────────────────────────────
+  # Имитирует внешнюю БД пользователя: raw_data (источник) + synth_data (экспорт).
+  user_db:
+    image: postgres:16-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: ${USER_DB_USER:-user}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD:-user}
+      POSTGRES_DB: postgres
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+      - ../db/init_user_db.sh:/docker-entrypoint-initdb.d/init_user_db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER:-user} -d postgres"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -148,4 +170,5 @@ services:
 volumes:
   redis_data:
   postgres_data:
+  user_db_data:
   shared_data:    # Shared Volume: /data/{datasets,splits,synth,models,reports}

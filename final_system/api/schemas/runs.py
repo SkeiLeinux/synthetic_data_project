@@ -13,7 +13,6 @@ from api.store import RunRecord, RunStatus
 
 
 class RunCreate(BaseModel):
-    dataset_name: str
     config_name:  str
     save_model:   bool = False
     quick_test:   bool = False

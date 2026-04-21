@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -128,18 +129,7 @@ def create_run(
     settings:         Settings = Depends(get_settings),
     _: None = Depends(require_auth),
 ) -> RunSummary:
-    # Проверяем что датасет существует
-    dataset_path = settings.data_dir / f"{body.dataset_name}.csv"
-    if not dataset_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "code": "NOT_FOUND",
-                "message": f"Датасет '{body.dataset_name}' не найден. Загрузите его через POST /datasets",
-            },
-        )
-
-    # Проверяем что конфиг существует
+    # Проверяем что конфиг существует и загружаем его — он единственный источник правды
     config_path = settings.configs_dir / f"{body.config_name}.yaml"
     if not config_path.exists():
         raise HTTPException(
@@ -150,10 +140,31 @@ def create_run(
             },
         )
 
+    import sys as _sys
+    _sys.path.insert(0, str(settings.base_dir))
+    from config_loader import load_config as _load_config
+    cfg_check = _load_config(str(config_path))
+
+    dataset_name = cfg_check.pipeline.dataset_name
+
+    if cfg_check.data_import.type == "postgres":
+        dataset_path_str = ""
+    else:
+        _csv_path = settings.base_dir / cfg_check.data_import.path
+        if not _csv_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "NOT_FOUND",
+                    "message": f"CSV не найден: {cfg_check.data_import.path}. Проверьте data_import.path в конфиге.",
+                },
+            )
+        dataset_path_str = str(_csv_path)
+
     run_id = str(uuid.uuid4())
     record = RunRecord(
         run_id=run_id,
-        dataset_name=body.dataset_name,
+        dataset_name=dataset_name,
         config_name=body.config_name,
         save_model=body.save_model,
         webhook_url=body.webhook_url,
@@ -164,7 +175,7 @@ def create_run(
     background_tasks.add_task(
         _execute_pipeline,
         run_id=run_id,
-        dataset_path=str(dataset_path),
+        dataset_path=dataset_path_str,
         config_path=str(config_path),
         settings=settings,
         quick_test=body.quick_test,
@@ -465,9 +476,19 @@ def _execute_pipeline(
         eval_cli  = ServiceClient(settings.evaluation_service_url, timeout=300)
         rep_cli   = ServiceClient(settings.reporting_service_url,  timeout=60)
 
-        # 1. Загрузка датасета в Data Service
-        logger.info("Step 1/7: uploading dataset")
-        dataset_meta = data_cli.post_file("/api/v1/datasets", dataset_path)
+        # 1. Загрузка датасета в Data Service (CSV или PostgreSQL)
+        logger.info("Step 1/7: uploading dataset (source=%s)", cfg.data_import.type)
+        if cfg.data_import.type == "postgres":
+            dsn = os.environ.get(cfg.data_import.dsn_env, "")
+            if not dsn:
+                raise RuntimeError(f"Переменная окружения {cfg.data_import.dsn_env!r} не задана")
+            dataset_meta = data_cli.post("/api/v1/datasets/from-db", json={
+                "dsn":   dsn,
+                "query": cfg.data_import.query,
+                "name":  cfg.pipeline.dataset_name,
+            })
+        else:
+            dataset_meta = data_cli.post_file("/api/v1/datasets", dataset_path)
         dataset_id = dataset_meta["dataset_id"]
         logger.info("Step 1/7 done: dataset_id=%s rows=%s", dataset_id, dataset_meta.get("rows"))
 
@@ -599,6 +620,21 @@ def _execute_pipeline(
             logger.warning("Could not finalize synth file: %s", e)
 
         abs_synth = str(Path("/data") / synth_path)
+
+        # Экспорт синтетики в БД пользователя (если задано в конфиге)
+        if cfg.data_export.type == "postgres":
+            logger.info("Exporting synthetic data to DB table %r", cfg.data_export.table)
+            dsn = os.environ.get(cfg.data_export.dsn_env, "")
+            if not dsn:
+                raise RuntimeError(f"Переменная окружения {cfg.data_export.dsn_env!r} не задана")
+            import pandas as _pd
+            from sqlalchemy import create_engine as _ce
+            _df = _pd.read_csv(abs_synth)
+            _engine = _ce(dsn)
+            _df.to_sql(cfg.data_export.table, _engine,
+                       if_exists=cfg.data_export.if_exists, index=False, schema="public")
+            _engine.dispose()
+            logger.info("Exported %d rows to DB table %r", len(_df), cfg.data_export.table)
 
         verdict = report.get("verdict", {}).get("overall")
         run_store.update(
