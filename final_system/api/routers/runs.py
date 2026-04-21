@@ -516,9 +516,9 @@ def _execute_pipeline(
         logger.info("Step 2/7 done: split_id=%s train=%s holdout=%s",
                     split_id, split_meta.get("train_rows"), split_meta.get("holdout_rows"))
 
-        config_name = record.config_name
-        if not config_name.endswith(".yaml"):
-            config_name += ".yaml"
+        # Сериализуем GeneratorYamlConfig один раз (с учётом apply_quick_test,
+        # если он применён выше) — synthesis_service не читает YAML с диска.
+        generator_body = cfg.generator.model_dump(mode="json")
 
         max_iterations = getattr(cfg.pipeline, "max_iterations", 1)
         poll_interval  = 5 if quick_test else 10
@@ -537,7 +537,7 @@ def _execute_pipeline(
             logger.info("Step 3/7: starting synthesis job%s", iter_tag)
             job = synth_cli.post("/api/v1/jobs", json={
                 "split_id":    split_id,
-                "config_name": config_name,
+                "generator":   generator_body,
                 "n_rows":      record.n_synth_rows,
                 "save_model":  record.save_model,
                 "run_id":      run_id,

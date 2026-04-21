@@ -9,5 +9,5 @@ venv/
 data/
 models/
 logs/
-archive/reporter/reports/
-archive/
+../archive/reporter/reports/
+../archive/

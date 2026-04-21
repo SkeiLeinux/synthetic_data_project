@@ -211,5 +211,5 @@ __marimo__/
 *.csv
 *.parquet
 logs/
-final_system/archive/reporter/reports/
+archive/reporter/reports/
 final_system/data

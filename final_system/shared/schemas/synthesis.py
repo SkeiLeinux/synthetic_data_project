@@ -20,9 +20,14 @@ class JobStatus(str, Enum):
 
 
 class SynthesisJobCreate(BaseModel):
-    """Тело запроса POST /jobs."""
+    """Тело запроса POST /jobs.
+
+    generator — сериализованный GeneratorYamlConfig (см. config_loader.py).
+    Gateway парсит YAML, применяет quick_test при необходимости и передаёт
+    готовый словарь — synthesis_service не читает configs с диска.
+    """
     split_id: str
-    config_name: str
+    generator: Dict[str, Any]
     n_rows: Optional[int] = None    # None = совпадает с размером train
     save_model: bool = False
     run_id: Optional[str] = None          # gateway run_id — сохраняется в metadata модели

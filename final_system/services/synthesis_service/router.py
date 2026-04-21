@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 import threading
@@ -12,7 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pandas as pd
-import yaml
 from fastapi import APIRouter, Depends, HTTPException, status
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # -> final_system/
@@ -147,21 +147,32 @@ def _build_generator(gen_yaml: GeneratorYamlConfig):
         raise ValueError(f"Неизвестный generator_type: {t!r}")
 
 
-def _load_gen_yaml(config_path: Path) -> GeneratorYamlConfig:
-    with open(config_path, encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-    return GeneratorYamlConfig.model_validate(raw.get("generator", {}))
+def _write_model_sidecar(
+    meta_path: Path,
+    *,
+    model_id: str,
+    run_id: Optional[str],
+    dataset_name: Optional[str],
+    generator_type: str,
+    created_at: str,
+    file_size_bytes: int,
+    privacy_report: Dict[str, Any],
+) -> None:
+    """Пишет {model_id}.meta.json рядом с .pkl.
 
-
-def _resolve_config(settings: Settings, config_name: str) -> Path:
-    """Поддерживает абсолютный путь, путь от configs_dir, или имя файла."""
-    p = Path(config_name)
-    if p.is_absolute() and p.exists():
-        return p
-    candidate = settings.configs_dir / config_name
-    if candidate.exists():
-        return candidate
-    raise FileNotFoundError(f"Конфиг не найден: {config_name} (искали в {settings.configs_dir})")
+    Gateway читает этот сайдкар для /models и /models/{id} — и не обязан
+    импортировать synthesizer-классы ради pickle.load.
+    """
+    payload = {
+        "model_id": model_id,
+        "run_id": run_id,
+        "dataset_name": dataset_name,
+        "generator_type": generator_type,
+        "created_at": created_at,
+        "file_size_bytes": file_size_bytes,
+        "privacy_report": privacy_report,
+    }
+    meta_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _load_split_meta(settings: Settings, split_id: str) -> SplitMeta:
@@ -192,16 +203,16 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
     store = job_store
     store.update(job_id, status=JobStatus.running, started_at=datetime.now(timezone.utc))
     t0 = time.time()
-    logger.info("[job %s] Started: split_id=%s config=%s n_rows=%s", job_id, body.split_id, body.config_name, body.n_rows)
+    logger.info("[job %s] Started: split_id=%s generator_type=%s n_rows=%s",
+                job_id, body.split_id, body.generator.get("generator_type"), body.n_rows)
     try:
         # 1. Загрузка метаданных сплита
         meta = _load_split_meta(settings, body.split_id)
         train_df = pd.read_csv(settings.splits_dir / body.split_id / "train.csv")
         logger.info("[job %s] Loaded train set: %d rows, %d columns", job_id, len(train_df), len(train_df.columns))
 
-        # 2. Загрузка конфига генератора
-        config_path = _resolve_config(settings, body.config_name)
-        gen_yaml = _load_gen_yaml(config_path)
+        # 2. Валидация inline-конфига генератора (присылает Gateway)
+        gen_yaml = GeneratorYamlConfig.model_validate(body.generator)
         generator = _build_generator(gen_yaml)
         logger.info("[job %s] Generator: %s", job_id, gen_yaml.generator_type)
 
@@ -244,19 +255,33 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
         synth_df.to_csv(settings.data_root / synth_rel, index=False)
         logger.info("[job %s] Synth (pending) saved: %s", job_id, synth_rel)
 
-        # 7. Опционально: сохранение модели
+        # 7. Опционально: сохранение модели + JSON-сайдкар с метаданными.
+        # Сайдкар читает Gateway (GET /models, /models/{id}) — так он не зависит
+        # от импортируемости synthesizer-классов при pickle.load.
+        dp_report = generator.privacy_report()
         model_id: Optional[str] = None
         if body.save_model:
             model_id = str(uuid.uuid4())
             settings.models_dir.mkdir(parents=True, exist_ok=True)
-            # Прикрепляем метаданные запуска к модели перед сериализацией
+            created_at = datetime.now(timezone.utc).isoformat()
             generator.set_metadata(
                 run_id=body.run_id,
                 dataset_name=body.dataset_name,
                 model_id=model_id,
-                created_at=datetime.now(timezone.utc).isoformat(),
+                created_at=created_at,
             )
-            generator.save(str(settings.models_dir / f"{model_id}.pkl"))
+            pkl_path = settings.models_dir / f"{model_id}.pkl"
+            generator.save(str(pkl_path))
+            _write_model_sidecar(
+                settings.models_dir / f"{model_id}.meta.json",
+                model_id=model_id,
+                run_id=body.run_id,
+                dataset_name=body.dataset_name,
+                generator_type=gen_yaml.generator_type,
+                created_at=created_at,
+                file_size_bytes=pkl_path.stat().st_size,
+                privacy_report=dp_report,
+            )
             logger.info("[job %s] Model saved: %s (dataset=%s)", job_id, model_id, body.dataset_name)
 
         store.update(
@@ -264,7 +289,7 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
             status=JobStatus.done,
             synth_path=synth_rel,
             model_id=model_id,
-            dp_report=generator.privacy_report(),
+            dp_report=dp_report,
             finished_at=datetime.now(timezone.utc),
         )
         logger.info("[job %s] Done in %.1fs total", job_id, time.time() - t0)

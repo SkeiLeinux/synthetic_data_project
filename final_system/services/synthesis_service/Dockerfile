@@ -23,18 +23,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Генераторы и их зависимости
 COPY synthesizer/ ./synthesizer/
-# config_loader нужен для парсинга YAML-конфигов
+# config_loader нужен только для валидации GeneratorYamlConfig (lazy-импорты
+# evaluator/reporter внутри .to_*_config() в synthesis_service не вызываются)
 COPY config_loader.py .
-# evaluator/ и reporter/ нужны как транзитивные зависимости config_loader
-COPY evaluator/ ./evaluator/
-COPY reporter/reporter.py ./reporter/reporter.py
-COPY reporter/__init__.py ./reporter/__init__.py
 # Общие Pydantic-схемы
 COPY shared/ ./shared/
 # Код самого сервиса
 COPY services/synthesis_service/ ./services/synthesis_service/
 
-RUN mkdir -p /data/synth /data/models /app/configs
+RUN mkdir -p /data/synth /data/models
 
 EXPOSE 8002
 

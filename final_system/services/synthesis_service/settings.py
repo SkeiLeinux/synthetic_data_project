@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     )
 
     data_root: Path = Path("/data")
-    configs_dir: Path = Path("/app/configs")
 
     @property
     def splits_dir(self) -> Path:

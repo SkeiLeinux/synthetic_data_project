@@ -1,9 +1,9 @@
 import configparser
 import os
 from data_manager import DataManager
-from final_system.archive.generator import generate_synthetic_data
+from archive.generator import generate_synthetic_data
 from processor import DataProcessor
-from final_system.archive.validator import DataValidator
+from archive.validator import DataValidator
 import uuid
 from datetime import datetime
 from logger_config import setup_logger

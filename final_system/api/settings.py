@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path(__file__).parent.parent / "data"
     models_dir: Path = Path("/data") / "models"
     configs_dir: Path = Path(__file__).parent.parent / "configs"
-    reports_dir: Path = Path(__file__).parent.parent / "reporter" / "reports"
+    reports_dir: Path = Path("/data") / "reports"   # shared volume — пишет reporting_service, читает Gateway
     log_path: str = "logs/app.log"
     data_root: Path = Path("/data")   # shared volume; переопределяется через DATA_ROOT
 

@@ -16,7 +16,7 @@ COPY data_processor/ ./data_processor/
 COPY config_loader.py ./
 COPY configs/     ./configs/
 
-RUN mkdir -p data models logs reporter/reports
+RUN mkdir -p data models logs
 
 EXPOSE 8000
 

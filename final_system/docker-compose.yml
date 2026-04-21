@@ -18,11 +18,9 @@ services:
       - MODELS_DIR=/data/models
     volumes:
       - ./data:/app/data
-      - ./models:/app/models
-      - ./configs:/app/configs
+      - ./configs:/app/configs   # CRUD через /api/v1/configs + чтение в _execute_pipeline
       - ./logs:/app/logs
-      - ./reporter/reports:/app/reporter/reports
-      - shared_data:/data
+      - shared_data:/data        # datasets/splits/synth/models/reports — всё через shared volume
     depends_on:
       redis:
         condition: service_healthy
@@ -118,7 +116,8 @@ services:
       - "8002:8002"
     volumes:
       - shared_data:/data
-      - ./configs:/app/configs
+      # configs больше не монтируются — Gateway передаёт generator-конфиг
+      # inline в теле POST /api/v1/jobs.
     deploy:
       resources:
         reservations:

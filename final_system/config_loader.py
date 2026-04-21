@@ -111,7 +111,7 @@ class DataExportConfig(BaseModel):
 
 class PathsConfig(BaseModel):
     logs: str = "logs/app.log"
-    output_dir: str = "archive/reporter/reports"
+    output_dir: str = "../archive/reporter/reports"
 
 
 class PipelineConfig(BaseModel):
