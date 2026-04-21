@@ -2,304 +2,227 @@
 
 **Сервис генерации синтетических табличных данных с оценкой приватности и полезности**
 
-Дипломная работа — НИУ ВШЭ, ФКН, Программная инженерия, 2024–2026.
+Магистерская выпускная работа.
 
 ---
 
 ## Описание
 
-Система реализует полный пайплайн создания синтетических табличных данных с гарантиями дифференциальной приватности (DP-CTGAN на базе SmartNoise Synth). После генерации автоматически вычисляются метрики приватности и полезности, формируется отчёт с агрегированным вердиктом PASS / FAIL / PARTIAL.
+Система реализует полный пайплайн создания синтетических табличных данных с гарантиями дифференциальной приватности (DP). После генерации автоматически вычисляются метрики приватности и полезности, формируется отчёт с агрегированным вердиктом PASS / FAIL / PARTIAL.
 
 **Ключевые возможности:**
-- Генерация данных с DP-гарантиями (DP-SGD, отслеживание расхода ε/δ-бюджета)
-- Оценка приватности: k/l/t-анонимность, дистанционные метрики DCR/NNDR, симуляция атаки MIA
-- Оценка полезности: статистическое сходство (JSD, TVD), ML-эффективность (TSTR/TRTR)
+- Пять генераторов: **DP-CTGAN** (SmartNoise, основной), **DP-TVAE** (Opacus), **CTGAN / TVAE / CopulaGAN** (SDV, baseline без DP)
+- DP-SGD-обучение с отслеживанием расхода ε/δ-бюджета через Privacy Accountant (RDP)
+- Оценка приватности: k/l/t-анонимность, дистанционные метрики DCR/NNDR, distance-based proxy MIA
+- Оценка полезности: статистическое сходство (JSD, TVD), корреляции (Pearson, Cramér's V), ML-эффективность (TSTR/TRTR F1)
 - REST API (FastAPI) с документацией Swagger на `/docs`
-- CLI для запуска из командной строки без сервера
-- Сохранение и повторное использование обученных моделей
+- Микросервисная архитектура: изолированные образы под тяжёлые ML-зависимости
+- Сохранение и повторное использование обученных моделей без расходования ε-бюджета
+- Импорт/экспорт данных: CSV и PostgreSQL
 
 ---
 
-## Установка
+## Архитектура
 
-```bash
-pip install -r requirements.txt
+Система построена как набор микросервисов, общающихся по HTTP. Файловые артефакты (датасеты, модели, отчёты) передаются через **shared Docker volume** — сервисы обмениваются путями, а не содержимым.
+
+| Сервис | Порт | Образ | Ответственность |
+|---|---|---|---|
+| **Gateway** (`app`) | 8000 | lightweight | HTTP-точка входа, оркестрация пайплайна, Redis run state |
+| **Data Service** | 8001 | lightweight | Загрузка CSV / PostgreSQL, предобработка, стратифицированный holdout-сплит |
+| **Synthesis Service** | 8002 | ~13 GB (torch + opacus + smartnoise + sdv) | Обучение генераторов, семплирование, хранение моделей |
+| **Evaluation Service** | 8003 | ~960 MB (sklearn/scipy) | Метрики приватности и полезности |
+| **Reporting Service** | 8004 | minimal (fastapi + pydantic) | Итоговый вердикт PASS/FAIL + JSON-отчёт |
+| **Redis** | 6379 | redis:7-alpine | State Store (run state, статусы) |
+| **PostgreSQL** (system) | 5433 | postgres:16-alpine | ProcessRegistry (история запусков) |
+| **PostgreSQL** (user_db) | 5434 | postgres:16-alpine | Тестовая БД пользователя для импорта/экспорта данных |
+
+### Поток данных (POST /api/v1/runs)
+
+```
+Gateway (runs.py::_execute_pipeline_microservices)
+  │
+  ├─ Step 1  POST data_service/datasets              (upload CSV)
+  ├─ Step 2  POST data_service/datasets/{id}/split   (preprocess + holdout split)
+  ├─ Step 3  POST synthesis_service/jobs             (async training job)
+  ├─ Step 4  GET  synthesis_service/jobs/{id}        (poll every 10s)
+  ├─ Step 5  POST evaluation_service/evaluate/privacy
+  ├─ Step 6  POST evaluation_service/evaluate/utility
+  └─ Step 7  POST reporting_service/reports          (verdict + save JSON)
 ```
 
-Зависимости: `smartnoise-synth`, `fastapi`, `uvicorn`, `pydantic`, `pydantic-settings`, `torch`, `scikit-learn`, `pandas`, `sqlalchemy`, `psycopg2-binary`.
+### Shared Volume (`/data` внутри контейнеров)
 
-PostgreSQL необходим только для ProcessRegistry; без него можно запускать с флагом `--no-db`.
+```
+/data/
+├── datasets/{dataset_id}/raw.csv
+├── splits/{split_id}/train.csv
+├── splits/{split_id}/holdout.csv
+├── splits/{split_id}/meta.json
+├── synth/{job_id}/synthetic.csv
+├── models/{model_id}.pkl
+├── models/{model_id}.meta.json      # sidecar: run_id, dataset_name, dp_config, dp_spent
+└── reports/{dataset}__{generator}__{ts}.json
+```
+
+`holdout.csv` фиксируется однократно на этапе сплита и **не передаётся в генератор** — только в оценщики. Это обеспечивает корректное измерение меморизации (DCR, MIA).
 
 ---
 
-## Запуск через Docker (рекомендуется)
+## Установка и запуск
 
-### Предварительные требования
+### Требования
 
 - Docker Desktop
 - (опционально) NVIDIA Container Toolkit — для обучения на GPU
+- 15+ GB свободного места для сборки `synthesis_service`
 
 ### Запуск
 
 ```bash
 cd final_system
+cp .env.example .env    # отредактируйте пароли под себя
 docker compose up -d --build
 ```
 
-Поднимаются четыре контейнера:
+При первом запуске сборка `synthesis_service` занимает 10–20 минут (pytorch + SmartNoise + SDV). Последующие пересборки быстрые — меняется только COPY-слой.
 
-| Контейнер | Порт | Описание |
-|---|---|---|
-| `app` | 8000 | FastAPI Gateway |
-| `data_service` | 8001 | Data Service (загрузка и сплит датасетов) |
-| `postgres` | 5432 | System Storage (ProcessRegistry) |
-| `redis` | 6379 | State Store (RunStore) |
+После запуска:
+- Swagger UI — http://localhost:8000/docs
+- Healthcheck Gateway — http://localhost:8000/api/v1/health
 
-После запуска Swagger UI доступен на http://localhost:8000/docs
+### Проверка статуса контейнеров
 
-### Подключение к PostgreSQL
-
-| Параметр | Значение |
-|---|---|
-| Host | `localhost` |
-| Port | `5432` |
-| Database | `synthetic_data_db` |
-| User | `postgres` |
-| Password | `111` |
-| Schema | `synthetic_data_schema` |
-
-**DBeaver / TablePlus / pgAdmin:** создать новое соединение PostgreSQL с параметрами выше.
-
-**psql:**
 ```bash
-psql -h localhost -U postgres -d synthetic_data_db
-# пароль: 111
-
-# просмотр таблиц
-\dt synthetic_data_schema.*
-
-# история запусков
-SELECT process_id, status, start_time, end_time FROM synthetic_data_schema.processes ORDER BY start_time DESC;
+docker compose ps               # все должны быть healthy
+docker compose logs -f app      # логи оркестратора
+docker compose logs -f synthesis_service   # прогресс обучения
 ```
 
-**Из контейнера:**
+### Пересборка отдельного сервиса
+
 ```bash
-docker exec -it final_system-postgres-1 psql -U postgres -d synthetic_data_db
+# После правок в api/, shared/, config_loader.py
+docker compose build app && docker compose up -d app
+
+# После правок в synthesizer/
+docker compose build synthesis_service && docker compose up -d synthesis_service
+
+# Аналогично для data_service / evaluation_service / reporting_service
 ```
-
-### Переменные окружения (`.env`)
-
-| Переменная | Описание | Дефолт |
-|---|---|---|
-| `API_KEY` | Bearer-токен; если не задан — auth отключена | не задан |
-| `DB_DISABLED` | `true` — не использовать PostgreSQL | `false` |
-| `REDIS_URL` | URL Redis | `redis://redis:6379/0` |
-| `DATA_DIR` | Директория датасетов | `final_system/data/` |
-| `MODELS_DIR` | Директория моделей | `final_system/models/` |
 
 ### GPU
 
-Для обучения на GPU убедитесь что установлен [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), затем пересоберите образ:
+Оба сервиса `app` и `synthesis_service` в `docker-compose.yml` резервируют один NVIDIA-GPU. Проверить доступность:
 
 ```bash
-docker compose up -d --build app
+docker compose exec synthesis_service python -c "import torch; print(torch.cuda.get_device_name(0))"
 ```
 
-Проверить доступность GPU внутри контейнера:
-```bash
-docker exec final_system-app-1 python -c "import torch; print(torch.cuda.get_device_name(0))"
-```
+При отсутствии GPU обучение идёт на CPU — значительно медленнее для DP-TVAE.
 
 ---
 
-## Быстрый старт
+## Переменные окружения (`.env`)
 
-### Запуск REST API
-
-```bash
-cd final_system
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-После запуска:
-- **Swagger UI** — http://localhost:8000/docs
-- **ReDoc** — http://localhost:8000/redoc
-- **OpenAPI JSON** — http://localhost:8000/openapi.json
-
-Полная спецификация всех эндпоинтов также доступна в файле `openapi.yaml` в корне репозитория.
-
-#### Аутентификация
-
-По умолчанию авторизация отключена (режим разработки). Чтобы включить:
-
-```bash
-export API_KEY=your-secret-token
-uvicorn api.main:app --host 0.0.0.0 --port 8000
-```
-
-После этого добавляйте заголовок `Authorization: Bearer your-secret-token` ко всем запросам.
-
-#### Переменные окружения API
+Шаблон — `final_system/.env.example`. Ключевые переменные:
 
 | Переменная | Назначение | Дефолт |
 |---|---|---|
-| `API_KEY` | Bearer-токен; если не задан — auth отключена | не задан |
-| `DATA_DIR` | Директория датасетов | `final_system/data/` |
-| `MODELS_DIR` | Директория моделей | `final_system/models/` |
-| `CONFIGS_DIR` | Директория конфигов | `final_system/configs/` |
-| `REPORTS_DIR` | Директория JSON-отчётов | `final_system/reporter/reports/` |
-| `LOG_PATH` | Путь к лог-файлу | `logs/app.log` |
-| `DB_DISABLED` | `true` — не использовать PostgreSQL | `false` |
+| `DB_PASSWORD` | Пароль системной PostgreSQL | — (обязательно) |
+| `DB_DISABLED` | `true` — не использовать ProcessRegistry | `false` |
+| `REDIS_URL` | URL Redis | `redis://redis:6379/0` |
+| `API_KEY` | Bearer-токен; если не задан — авторизация отключена | не задан |
+| `DB_IMPORT_DSN` | DSN БД-источника для `data_import.type: postgres` | не задан |
+| `DB_EXPORT_DSN` | DSN БД-приёмника для `data_export.type: postgres` | не задан |
+| `*_SERVICE_URL` | Адреса микросервисов (подставляются автоматически в Docker) | см. compose |
 
-Поддерживается файл `.env` в директории `final_system/`.
+---
 
-#### Пример: запуск пайплайна через API
+## Пример: запуск пайплайна через API
 
 ```bash
 # 1. Загрузить датасет
 curl -X POST http://localhost:8000/api/v1/datasets \
   -F "name=adult" -F "file=@data/adult.csv"
 
-# 2. Создать запуск
+# 2. Создать запуск с инлайн-конфигом
 curl -X POST http://localhost:8000/api/v1/runs \
   -H "Content-Type: application/json" \
-  -d '{"dataset_name":"adult","config_name":"adult","save_model":true}'
+  -d @configs/adult.yaml
 
 # 3. Проверить статус (run_id из ответа шага 2)
 curl http://localhost:8000/api/v1/runs/{run_id}
 
-# 4. Скачать синтетику
+# 4. Получить JSON-отчёт
+curl http://localhost:8000/api/v1/runs/{run_id}/report
+
+# 5. Скачать синтетику
 curl http://localhost:8000/api/v1/runs/{run_id}/synthetic -o synth.csv
+
+# 6. Список сохранённых моделей
+curl http://localhost:8000/api/v1/models
+
+# 7. Семплирование из сохранённой модели (без расходования ε)
+curl -X POST http://localhost:8000/api/v1/models/{model_id}/samples \
+  -H "Content-Type: application/json" \
+  -d '{"n_rows": 10000, "output_format": "csv"}' \
+  -o sampled.csv
 ```
 
----
+Полный список эндпоинтов — на `/docs` (Swagger UI).
 
-### Запуск через CLI
+### Авторизация
+
+По умолчанию отключена. Для включения:
 
 ```bash
-cd final_system
-
-# Запуск с дефолтным конфигом (configs/adult.yaml)
-python cli.py
-
-# Указать другой конфиг
-python cli.py --config configs/bank.yaml
-
-# Быстрый тест (50 эпох, 5 000 строк, ~2–3 мин)
-python cli.py --quick-test
-
-# Валидация конфига без запуска
-python cli.py --check
-
-# Запуск без PostgreSQL
-python cli.py --no-db
-
-# Сохранить обученную модель
-python cli.py --save-model models/adult_model.pkl
-
-# Сгенерировать синтетику из сохранённой модели (без повторного обучения)
-python cli.py --from-model models/adult_model.pkl --rows 10000
+# в .env
+API_KEY=$(openssl rand -hex 32)
 ```
 
-### Интеграционный тест
-
-```bash
-cd final_system
-python run_adult.py   # QUICK_TEST = True внутри файла (~2–3 мин)
-```
-
----
-
-## Архитектура пайплайна
-
-```
-Реальные данные
-      │
-      ▼
-[DataProcessor]           ← очистка, автодетекция типов колонок
-      │
-      ▼
- train / holdout split    ← ДО обучения генератора (методологически важно)
-      │
-   ┌──┴───────────────────────┐
-   ▼                          ▼
-[DPCTGANGenerator]        holdout (генератор не видит)
-   │                          │
-   ▼                          ▼
-[Синтетические данные]   контрольная группа
-   │
-   ├──▶ [PrivacyEvaluator]   ← DCR, NNDR, MIA, k/l/t-анонимность
-   └──▶ [UtilityEvaluator]   ← JSD, TVD, TSTR/TRTR
-              │
-              ▼
-         [Reporter]          ← вердикт PASS / FAIL / PARTIAL + JSON-отчёт
-              │
-              ▼
-    [ProcessRegistry]        ← PostgreSQL (опционально)
-```
-
-`real_holdout` не передаётся в генератор — только в оценщики. Это обеспечивает корректное измерение меморизации (DCR, MIA).
-
----
-
-## Структура репозитория
-
-```
-.
-├── openapi.yaml                 # OpenAPI 3.1.0 спецификация всех эндпоинтов
-├── requirements.txt
-├── db/
-│   └── init_db.sql              # Инициализация схемы PostgreSQL
-└── final_system/
-    ├── api/                     # FastAPI REST API
-    │   ├── main.py              # Точка входа (uvicorn api.main:app)
-    │   ├── settings.py          # Конфигурация через env / .env
-    │   ├── store.py             # In-memory хранилище запусков и оценок
-    │   ├── dependencies.py      # Bearer-авторизация
-    │   ├── routers/             # Эндпоинты по ресурсам
-    │   │   ├── runs.py          # /runs — запуск и мониторинг пайплайна
-    │   │   ├── models.py        # /models — управление моделями
-    │   │   ├── datasets.py      # /datasets — загрузка датасетов
-    │   │   ├── configs.py       # /configs — управление YAML-конфигами
-    │   │   ├── evaluations.py   # /evaluations — изолированная оценка
-    │   │   └── system.py        # /health, /metrics
-    │   └── schemas/             # Pydantic-схемы запросов и ответов
-    ├── synthesizer/
-    │   └── dp_ctgan.py          # DP-CTGAN генератор (SmartNoise)
-    ├── evaluator/
-    │   ├── privacy/             # k/l/t, DCR, NNDR, MIA
-    │   └── utility/             # JSD, TVD, TSTR, TRTR
-    ├── reporter/
-    │   └── reporter.py          # Вердикт PASS/FAIL/PARTIAL + JSON-отчёт
-    ├── data_service/
-    │   ├── data_io.py           # CSV / PostgreSQL I/O
-    │   └── processor.py         # Предобработка, детекция типов
-    ├── registry/
-    │   └── process_registry.py  # PostgreSQL-трекинг запусков (опционально)
-    ├── configs/
-    │   └── adult.yaml           # Основной конфиг (пример)
-    ├── pipeline.py              # run_pipeline() — главный оркестратор
-    ├── config_loader.py         # YAML → Pydantic-объекты
-    ├── cli.py                   # CLI-интерфейс
-    └── run_adult.py             # Интеграционный тест (Adult Census)
-```
+После рестарта `app` все запросы требуют заголовок `Authorization: Bearer <API_KEY>`.
 
 ---
 
 ## Конфигурация (YAML)
 
-Основной конфиг — `final_system/configs/adult.yaml`. Валидируется через Pydantic в `config_loader.py`.
+Основные конфиги в `final_system/configs/`:
 
-| Секция | Описание |
+| Файл | Генератор | DP | Назначение |
+|---|---|---|---|
+| `adult.yaml` | DP-CTGAN | ε=3.0 | Основной пример (Adult Census) |
+| `adult_dptvae.yaml` | DP-TVAE | σ-based | Второй DP-генератор |
+| `adult_ctgan.yaml` | CTGAN | — | Baseline без DP |
+| `adult_tvae.yaml` | TVAE | — | Baseline без DP |
+| `adult_copulagan.yaml` | CopulaGAN | — | Baseline без DP |
+| `adult_dpctgan_db.yaml` | DP-CTGAN | ε=3.0 | С импортом/экспортом через PostgreSQL |
+
+Структура конфига валидируется через Pydantic v2 в `config_loader.py`:
+
+| Секция | Содержимое |
 |---|---|
-| `pipeline` | sample_size, holdout_size, random_state, n_synth_rows |
-| `generator` | epsilon, delta, sigma, epochs, batch_size, cuda |
-| `data_schema` | auto-детекция или явное задание categorical/continuous колонок |
+| `pipeline` | sample_size, holdout_size, random_state, n_synth_rows, max_iterations |
+| `generator` | generator_type, epsilon, delta, sigma, epochs, batch_size, cuda, random_seed |
+| `data_schema` | auto-детекция или явное задание `categorical`/`continuous`/`exclude` |
+| `data_import` | type: `csv` / `postgres`, путь или SQL-запрос |
+| `data_export` | type: `csv` / `postgres`, путь или имя таблицы |
 | `privacy` | quasi_identifiers, sensitive_attribute |
 | `utility` | target_column, task_type (classification/regression) |
-| `thresholds` | PASS/FAIL пороги: max_utility_loss, max_mean_jsd, max_mia_auc и др. |
+| `thresholds` | max_utility_loss, max_mean_jsd, max_mia_auc, require_dp_enabled и др. |
 
-`config.ini` — легаси-формат, не используется.
+### Пороги вердикта (по умолчанию)
+
+| Метрика | PASS-критерий | Источник |
+|---|---|---|
+| `ε_spent` | ≤ `ε_target` | DP-SGD Privacy Accountant |
+| MIA AUC | ≤ 0.55 | Distance-based proxy |
+| DCR | `median(DCR_syn) > median(DCR_holdout)` | Дистанционная метрика |
+| k-анонимность | ≥ 5 (настраивается) | ПНСТ |
+| JSD (средняя) | < 0.40 | ПНСТ |
+| TSTR F1 loss | < 25% от TRTR F1 | ML-бенчмарк |
+
+Для генераторов без DP (CTGAN/TVAE/CopulaGAN) в конфиге должно быть `require_dp_enabled: false`.
 
 ---
 
@@ -307,48 +230,126 @@ python run_adult.py   # QUICK_TEST = True внутри файла (~2–3 мин
 
 | Метод | Путь | Описание |
 |---|---|---|
-| POST | `/api/v1/runs` | Запустить пайплайн |
-| GET | `/api/v1/runs/{run_id}` | Статус запуска |
-| GET | `/api/v1/runs/{run_id}/report` | JSON-отчёт |
-| GET | `/api/v1/runs/{run_id}/synthetic` | Скачать синтетику (CSV/JSON) |
+| POST | `/api/v1/datasets` | Загрузить датасет (multipart CSV) |
+| POST | `/api/v1/datasets/from-db` | Загрузить датасет из PostgreSQL |
 | GET | `/api/v1/datasets` | Список датасетов |
-| POST | `/api/v1/datasets` | Загрузить датасет |
-| GET | `/api/v1/models` | Список моделей |
-| POST | `/api/v1/models/{model_id}/samples` | Сгенерировать из модели |
-| POST | `/api/v1/evaluations/privacy` | Изолированная оценка приватности |
-| POST | `/api/v1/evaluations/utility` | Изолированная оценка полезности |
+| POST | `/api/v1/runs` | Запустить пайплайн |
+| GET | `/api/v1/runs/{run_id}` | Статус и метаданные запуска |
+| GET | `/api/v1/runs/{run_id}/report` | JSON-отчёт валидации |
+| GET | `/api/v1/runs/{run_id}/synthetic` | Скачать синтетику (CSV/JSON) |
+| DELETE | `/api/v1/runs/{run_id}` | Отменить активный / удалить завершённый |
+| GET | `/api/v1/models` | Список сохранённых моделей (фильтр по `dataset_name`) |
+| GET | `/api/v1/models/{model_id}` | Метаданные модели |
+| DELETE | `/api/v1/models/{model_id}` | Удалить модель |
+| POST | `/api/v1/models/{model_id}/samples` | Семплирование из сохранённой модели |
+| GET | `/api/v1/configs` | CRUD конфигов |
 | GET | `/api/v1/health` | Healthcheck |
 
-Полный список (33 эндпоинта) — в `openapi.yaml` или на `/docs`.
+Полная спецификация с примерами — на `/docs`.
+
+---
+
+## Структура репозитория
+
+```
+.
+├── CLAUDE.md                # Инструкции для Claude Code (контекст кодовой базы)
+├── ARCHITECTURE.md          # Детальное описание архитектуры
+├── REQUIREMENTS.md          # Функциональные и нефункциональные требования
+├── requirements.txt         # Зависимости для локальной разработки
+├── db/
+│   ├── init_db.sql          # Схема системной PostgreSQL
+│   └── init_user_db.sh      # Инициализация user_db (raw_data + synth_data)
+└── final_system/
+    ├── docker-compose.yml   # Оркестрация всех сервисов
+    ├── Dockerfile           # Образ Gateway
+    ├── .env.example         # Шаблон переменных окружения
+    ├── config_loader.py     # YAML → Pydantic-объекты (без ML-зависимостей)
+    ├── api/                 # Gateway (порт 8000)
+    │   ├── main.py          # FastAPI entry point
+    │   ├── settings.py      # Pydantic Settings
+    │   ├── store.py         # Redis-backed RunStore
+    │   ├── clients.py       # httpx ServiceClient + polling
+    │   ├── dependencies.py  # Bearer-авторизация
+    │   ├── routers/         # runs, datasets, models, configs, system
+    │   └── schemas/         # Pydantic схемы эндпоинтов Gateway
+    ├── services/
+    │   ├── data_service/       # порт 8001
+    │   ├── synthesis_service/  # порт 8002 (тяжёлый образ с GPU)
+    │   ├── evaluation_service/ # порт 8003
+    │   └── reporting_service/  # порт 8004
+    ├── shared/
+    │   ├── schemas/         # Pydantic-схемы, общие между сервисами
+    │   └── log_context.py   # ContextVar с run_id для сквозного логирования
+    ├── synthesizer/         # DP-CTGAN, DP-TVAE, SDV-генераторы, BaseGenerator
+    ├── evaluator/
+    │   ├── privacy/         # k/l/t, DCR, NNDR, MIA
+    │   └── utility/         # JSD, TVD, TSTR/TRTR, correlations
+    ├── data_processor/      # Preprocessing, type detection, minimization
+    ├── configs/             # YAML-конфиги под разные генераторы
+    └── tests/               # pytest
+```
+
+`archive/` в корне — старые прототипы, не используются.
+
+---
+
+## Тесты
+
+```bash
+# Из корня репозитория (не из final_system/):
+python -m pytest final_system/tests/ -v
+```
 
 ---
 
 ## База данных
 
-При запуске через Docker схема инициализируется автоматически из `db/init_db.sql`.
+### Системная PostgreSQL (`postgres`, порт 5433)
 
-При запуске без Docker:
+Хранит `ProcessRegistry` — метаданные запусков (не исходные данные). Инициализируется автоматически из `db/init_db.sql` при первом `docker compose up`. Схема `synthetic_data_schema`, таблицы: `processes`, `process_logs`, `process_metadata`.
+
+Подключение:
+
 ```bash
-psql -U postgres -f db/init_db.sql
+docker compose exec postgres psql -U postgres -d synthetic_data_db
+\dt synthetic_data_schema.*
 ```
 
-Схема `synthetic_data_schema`, таблицы: `processes`, `process_logs`, `process_metadata`, `metadata_types`.
-Отключить через `--no-db` (CLI) или `DB_DISABLED=true` в `.env`.
+Отключается через `DB_DISABLED=true` в `.env` — система будет работать только с Redis.
+
+### БД пользователя (`user_db`, порт 5434)
+
+Имитирует внешнюю БД заказчика с двумя таблицами:
+- `raw_data` — источник данных для `data_import.type: postgres`
+- `synth_data` — приёмник синтетики для `data_export.type: postgres`
+
+Используется для демонстрации сценария "end-to-end через БД". Конфигурируется через `DB_IMPORT_DSN` / `DB_EXPORT_DSN`.
 
 ---
 
 ## Воспроизводимость
 
-```python
-# CLI
-python cli.py --save-model models/my_model.pkl
-python cli.py --from-model models/my_model.pkl --rows 50000
+- Во всех генераторах зафиксирован `random_seed` (по умолчанию 42) — проброшен в torch, numpy и SDV
+- Sidecar `.meta.json` рядом с `.pkl` сохраняет: `run_id`, `dataset_name`, `dp_config` (ε/δ/σ), `dp_spent` (потраченный ε + история по эпохам), `created_at`
+- Повторное семплирование из сохранённой модели (`POST /models/{id}/samples`) **не расходует** ε-бюджет — DP расходуется только в `fit()`
 
-# Программно
-from synthesizer.dp_ctgan import DPCTGANGenerator
-generator = DPCTGANGenerator.load("models/my_model.pkl")
-df = generator.sample(10000)
+```bash
+# Получить метаданные модели
+curl http://localhost:8000/api/v1/models/{model_id}
+
+# Сгенерировать 50k строк без повторного обучения
+curl -X POST http://localhost:8000/api/v1/models/{model_id}/samples \
+  -H "Content-Type: application/json" \
+  -d '{"n_rows": 50000, "output_format": "csv"}' \
+  -o resampled.csv
 ```
 
-Фиксируйте `random_state` в конфиге и сохраняйте модель для воспроизводимости эксперимента.
+---
 
+## Ограничения
+
+- **Single-table only** — мульти-таблица (relational) не поддерживается
+- **Синтез job state in-memory** — при рестарте `synthesis_service` активные обучения теряются; Gateway получит 404 при поллинге и run перейдёт в FAIL
+- **`--workers 1`** на всех сервисах — shared volume не поддерживает параллельную запись
+- **DP-CTGAN при σ=5.0** — возможна потеря utility ~20% на редких категориях (mode collapse). Снижайте σ до 1.5–2.0 или поднимайте ε до 5–8 при строгих требованиях к полезности.
