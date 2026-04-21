@@ -14,7 +14,7 @@ COPY services/data_service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Общий модуль DataProcessor / DataIO (используется и gateway, и этим сервисом)
-COPY data_service/ ./data_service/
+COPY data_processor/ ./data_processor/
 # Общие Pydantic-схемы
 COPY shared/ ./shared/
 # Код самого сервиса (main.py, router.py, settings.py)

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # → final_system/
-from data_service.processor import DataProcessor
+from data_processor.processor import DataProcessor
 from shared.log_context import set_run_id
 from shared.schemas.datasets import DatasetMeta, SplitMeta, SplitRequest
 from services.data_service.settings import Settings, get_settings

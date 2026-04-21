@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/         ./api/
 COPY shared/      ./shared/
-COPY data_service/ ./data_service/
+COPY data_processor/ ./data_processor/
 COPY config_loader.py ./
 COPY configs/     ./configs/
 
