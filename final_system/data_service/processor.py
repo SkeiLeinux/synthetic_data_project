@@ -5,20 +5,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-try:
-    from ..logger_config import setup_logger
-except ImportError:
-    import sys, os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from logger_config import setup_logger
-
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Если числовой столбец имеет не более этого числа уникальных значений —
 # он считается категориальным (например, education-num имеет 16 значений).

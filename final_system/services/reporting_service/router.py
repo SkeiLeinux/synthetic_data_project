@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # -> final_system/
 from reporter.reporter import Reporter, VerdictThresholds
+from shared.log_context import set_run_id
 from shared.schemas.reporting import ReportRequest, ReportResponse
 from services.reporting_service.settings import Settings, get_settings
 
@@ -41,7 +42,8 @@ def create_report(
     body: ReportRequest,
     settings: Settings = Depends(get_settings),
 ) -> ReportResponse:
-    logger.info("Report building: run_id=%s dataset=%s generator=%s", body.run_id, body.dataset_name, body.generator_type)
+    set_run_id(body.run_id)
+    logger.info("Report building: dataset=%s generator=%s", body.dataset_name, body.generator_type)
     thresholds = _make_thresholds(body)
     reporter = Reporter(thresholds=thresholds)
 

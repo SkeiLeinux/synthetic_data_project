@@ -22,14 +22,17 @@ def _config_summary(path: Path) -> ConfigSummary:
     stat = path.stat()
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        epsilon = (raw.get("generator") or {}).get("epsilon")
-        epochs  = (raw.get("generator") or {}).get("epochs")
+        gen            = raw.get("generator") or {}
+        generator_type = gen.get("generator_type")
+        epsilon        = gen.get("epsilon")
+        epochs         = gen.get("epochs")
     except Exception:
-        epsilon = epochs = None
+        generator_type = epsilon = epochs = None
     return ConfigSummary(
         name=path.stem,
         created_at=datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc),
         updated_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+        generator_type=generator_type,
         epsilon=epsilon,
         epochs=epochs,
     )
@@ -135,12 +138,17 @@ async def create_config(
 @router.get("/{name}")
 def get_config(
     name:     str,
+    format:   str = Query("yaml", pattern="^(yaml|json)$"),
     settings: Settings = Depends(get_settings),
     _: None = Depends(require_auth),
 ) -> Any:
     path = settings.configs_dir / f"{name}.yaml"
     if not path.exists():
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Конфиг '{name}' не найден"})
+    if format == "json":
+        summary = _config_summary(path)
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return {**summary.model_dump(), "content": raw}
     return PlainTextResponse(path.read_text(encoding="utf-8"), media_type="application/x-yaml")
 
 

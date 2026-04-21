@@ -12,10 +12,11 @@ from typing import Any, Dict, Optional
 
 
 class JobStatus(str, Enum):
-    queued  = "queued"
-    running = "running"
-    done    = "done"
-    failed  = "failed"
+    queued    = "queued"
+    running   = "running"
+    done      = "done"
+    failed    = "failed"
+    cancelled = "cancelled"
 
 
 def _now() -> datetime:

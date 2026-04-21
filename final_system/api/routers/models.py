@@ -40,7 +40,7 @@ def _model_summary(path: Path) -> ModelSummary:
         dataset_name=meta.get("dataset_name", "unknown"),
         created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
         file_size_bytes=stat.st_size,
-        epsilon=cfg.epsilon if cfg else None,
+        epsilon=getattr(cfg, "epsilon", None) if cfg else None,
         epochs_completed=meta.get("epochs_completed"),
         spent_epsilon=meta.get("spent_epsilon"),
     )
@@ -86,12 +86,12 @@ def get_model(
     meta = _load_metadata(path)
     cfg = meta.get("config")
     dp_config = None
-    if cfg:
+    if cfg and getattr(cfg, "epsilon", None) is not None:
         dp_config = {
-            "epsilon_initial": cfg.epsilon,
+            "epsilon_initial": getattr(cfg, "epsilon", None),
             "delta": meta.get("delta_used"),
-            "sigma": cfg.sigma,
-            "is_dp_enabled": not cfg.disabled_dp,
+            "sigma": getattr(cfg, "sigma", None),
+            "is_dp_enabled": not getattr(cfg, "disabled_dp", True),
         }
 
     return ModelDetail(
@@ -101,7 +101,7 @@ def get_model(
         dataset_name=meta.get("dataset_name", "unknown"),
         created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
         file_size_bytes=stat.st_size,
-        epsilon=cfg.epsilon if cfg else None,
+        epsilon=getattr(cfg, "epsilon", None) if cfg else None,
         epochs_completed=meta.get("epochs_completed"),
         spent_epsilon=meta.get("spent_epsilon"),
         dp_config=dp_config,
@@ -144,9 +144,15 @@ def sample_from_model(
     if not path.exists():
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Модель '{model_id}' не найдена"})
 
-    from synthesizer.loader import load_generator
-    generator = load_generator(str(path))
-    synth_df = generator.sample(body.n_rows)
+    from api.clients import ServiceClient
+    synth_cli = ServiceClient(settings.synthesis_service_url, timeout=300)
+    result = synth_cli.post(f"/api/v1/models/{model_id}/sample", json={"n_rows": body.n_rows})
+    synth_path = Path("/data") / result["synth_path"]
+    if not synth_path.exists():
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Файл синтетики не найден"})
+
+    import pandas as pd
+    synth_df = pd.read_csv(synth_path)
 
     if body.output_format == "json":
         from fastapi.responses import JSONResponse

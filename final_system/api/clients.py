@@ -30,6 +30,11 @@ class ServiceClient:
         resp.raise_for_status()
         return resp.json()
 
+    def delete(self, path: str, **kwargs) -> Any:
+        resp = httpx.delete(f"{self._base}{path}", timeout=self._timeout, **kwargs)
+        resp.raise_for_status()
+        return resp.json() if resp.content else None
+
     def post_file(self, path: str, file_path: str, field: str = "file") -> Any:
         p = Path(file_path)
         with open(p, "rb") as f:
@@ -62,4 +67,6 @@ def poll_synthesis_job(
             return job
         if job["status"] == "failed":
             raise RuntimeError(f"Synthesis job failed: {job.get('error_message')}")
+        if job["status"] == "cancelled":
+            raise RuntimeError(f"Synthesis job {job_id} was cancelled")
     raise TimeoutError(f"Synthesis job {job_id} timed out after {timeout}s")

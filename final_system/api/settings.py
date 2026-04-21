@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     configs_dir: Path = Path(__file__).parent.parent / "configs"
     reports_dir: Path = Path(__file__).parent.parent / "reporter" / "reports"
     log_path: str = "logs/app.log"
+    data_root: Path = Path("/data")   # shared volume; переопределяется через DATA_ROOT
 
     default_config: str = "configs/adult.yaml"
     db_disabled: bool = False
@@ -53,20 +54,11 @@ class Settings(BaseSettings):
     db_schema: str = "synthetic_data_schema"
     redis_url: str = "redis://localhost:6379/0"
 
-    # URL микросервисов (пустая строка = сервис не подключён)
+    # URL микросервисов (задаются в docker-compose через env).
     data_service_url: str = ""
     synthesis_service_url: str = ""
     evaluation_service_url: str = ""
     reporting_service_url: str = ""
-
-    @property
-    def microservices_enabled(self) -> bool:
-        return all([
-            self.data_service_url,
-            self.synthesis_service_url,
-            self.evaluation_service_url,
-            self.reporting_service_url,
-        ])
 
 
 @lru_cache

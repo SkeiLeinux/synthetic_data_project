@@ -13,13 +13,17 @@ import os
 # Гарантируем что final_system/ в sys.path при запуске через uvicorn
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from shared.log_context import RunIdFormatter, LOG_FORMAT, LOG_DATE_FORMAT
+
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    format=LOG_FORMAT,
+    datefmt=LOG_DATE_FORMAT,
     force=True,
 )
+for _h in logging.root.handlers:
+    _h.setFormatter(RunIdFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
 
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -48,10 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log_path = pathlib.Path(settings.log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         fh = logging.FileHandler(str(log_path), mode="a", encoding="utf-8")
-        fh.setFormatter(logging.Formatter(
-            "[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        ))
+        fh.setFormatter(RunIdFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
         logging.getLogger().addHandler(fh)
     except Exception as e:
         _log.warning("Не удалось открыть лог-файл %s: %s", settings.log_path, e)

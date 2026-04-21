@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # → final_system/
 from data_service.processor import DataProcessor
+from shared.log_context import set_run_id
 from shared.schemas.datasets import DatasetMeta, SplitMeta, SplitRequest
 from services.data_service.settings import Settings, get_settings
 
@@ -25,6 +26,42 @@ logger = logging.getLogger(__name__)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def _build_profile(df: pd.DataFrame, schema) -> dict:
+    """Строит JSON-профиль предобработанного датасета."""
+    columns = {}
+    for col in df.columns:
+        null_count = int(df[col].isna().sum())
+        null_pct   = round(null_count / len(df), 4) if len(df) else 0.0
+        if col in schema.continuous:
+            columns[col] = {
+                "type":       "continuous",
+                "null_count": null_count,
+                "null_pct":   null_pct,
+                "min":        float(df[col].min()),
+                "max":        float(df[col].max()),
+                "mean":       round(float(df[col].mean()), 4),
+                "median":     float(df[col].median()),
+                "std":        round(float(df[col].std()), 4),
+            }
+        elif col in schema.categorical:
+            top = df[col].value_counts(dropna=False).head(5)
+            columns[col] = {
+                "type":       "categorical",
+                "null_count": null_count,
+                "null_pct":   null_pct,
+                "n_unique":   int(df[col].nunique()),
+                "top_values": {str(k): int(v) for k, v in top.items()},
+            }
+    return {
+        "total_rows":           len(df),
+        "total_columns":        len(df.columns),
+        "categorical_columns":  schema.categorical,
+        "continuous_columns":   schema.continuous,
+        "columns":              columns,
+    }
+
+
 
 def _dataset_dir(settings: Settings, dataset_id: str) -> Path:
     return settings.datasets_dir / dataset_id
@@ -113,11 +150,11 @@ def split_dataset(
     if not raw_path.exists():
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Датасет не найден"})
 
+    set_run_id(body.run_id)
     logger.info("Split started: dataset_id=%s holdout=%.0f%% sample_size=%d", dataset_id, body.holdout_size * 100, body.sample_size)
 
-    # 1. Загрузка
+    # 1. Загрузка (пропуски заполняются внутри DataProcessor.preprocess: median/mode)
     df = pd.read_csv(raw_path, na_values=body.na_values or [])
-    df.dropna(inplace=True)
 
     if body.sample_size > 0 and body.sample_size < len(df):
         df = df.sample(body.sample_size, random_state=body.random_state).reset_index(drop=True)
@@ -180,6 +217,14 @@ def split_dataset(
     train_df.to_csv(settings.data_root / train_path, index=False)
     holdout_df.to_csv(settings.data_root / holdout_path, index=False)
 
+    # FR-02.7: профиль предобработанного датасета (до разбивки, на df_clean)
+    import json as _json
+    profile_rel = f"splits/{split_id}/profile.json"
+    profile_data = _build_profile(df_clean, schema)
+    (settings.data_root / profile_rel).write_text(
+        _json.dumps(profile_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     meta = SplitMeta(
         split_id=split_id,
         dataset_id=dataset_id,
@@ -191,6 +236,7 @@ def split_dataset(
         continuous_columns=schema.continuous,
         target_column=body.target_column,
         minimization_report=minimization_report or None,
+        profile_path=profile_rel,
         created_at=datetime.now(timezone.utc),
     )
     (split_dir / "meta.json").write_text(meta.model_dump_json(), encoding="utf-8")
@@ -201,6 +247,27 @@ def split_dataset(
         body.exclude_columns,
     )
     return meta
+
+
+# ── GET /datasets/{dataset_id}/splits/{split_id}/profile ─────────────────────
+
+@router.get("/datasets/{dataset_id}/splits/{split_id}/profile",
+            summary="Профиль предобработанного датасета")
+def get_split_profile(
+    dataset_id: str,
+    split_id: str,
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    import json as _json
+    meta = _load_split_meta(settings.splits_dir, split_id)
+    if meta.dataset_id != dataset_id:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Сплит не найден"})
+    if not meta.profile_path:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Профиль недоступен"})
+    path = settings.data_root / meta.profile_path
+    if not path.exists():
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Файл профиля не найден"})
+    return _json.loads(path.read_text(encoding="utf-8"))
 
 
 # ── GET /datasets/{dataset_id}/splits/{split_id}/train ───────────────────────

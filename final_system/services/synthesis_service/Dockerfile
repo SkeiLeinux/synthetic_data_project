@@ -25,7 +25,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY synthesizer/ ./synthesizer/
 # config_loader нужен для парсинга YAML-конфигов
 COPY config_loader.py .
-COPY logger_config.py .
 # evaluator/ и reporter/ нужны как транзитивные зависимости config_loader
 COPY evaluator/ ./evaluator/
 COPY reporter/reporter.py ./reporter/reporter.py

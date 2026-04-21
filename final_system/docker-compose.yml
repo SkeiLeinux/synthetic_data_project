@@ -1,7 +1,7 @@
 services:
 
-  # ── Gateway / Orchestrator (монолит, порт 8000) ───────────────────────────
-  # Постепенно становится тонким оркестратором по мере выноса сервисов.
+  # ── Gateway / Orchestrator (порт 8000) ───────────────────────────────────
+  # Тонкий оркестратор: HTTP-вход, Redis-state, вызовы микросервисов.
   app:
     build: .
     ports:
@@ -15,20 +15,14 @@ services:
       - SYNTHESIS_SERVICE_URL=http://synthesis_service:8002
       - EVALUATION_SERVICE_URL=http://evaluation_service:8003
       - REPORTING_SERVICE_URL=http://reporting_service:8004
+      - MODELS_DIR=/data/models
     volumes:
       - ./data:/app/data
       - ./models:/app/models
       - ./configs:/app/configs
       - ./logs:/app/logs
       - ./reporter/reports:/app/reporter/reports
-      - shared_data:/data   # Shared Volume — подключён заранее, используется после миграции
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      - shared_data:/data
     depends_on:
       redis:
         condition: service_healthy

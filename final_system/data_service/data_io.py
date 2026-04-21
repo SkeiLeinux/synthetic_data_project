@@ -9,18 +9,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-try:
-    from ..logger_config import setup_logger
-except ImportError:
-    from logger_config import setup_logger
-
-logger = setup_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def _engine_from_db_config(db) -> "sqlalchemy.engine.Engine":

@@ -11,14 +11,18 @@ import sys
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+from shared.log_context import RunIdFormatter, LOG_FORMAT, LOG_DATE_FORMAT
+
 # До старта uvicorn — иначе basicConfig будет no-op
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
-    format="[%(asctime)s] [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    format=LOG_FORMAT,
+    datefmt=LOG_DATE_FORMAT,
     force=True,
 )
+for _h in logging.root.handlers:
+    _h.setFormatter(RunIdFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +38,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     settings.datasets_dir.mkdir(parents=True, exist_ok=True)
     settings.splits_dir.mkdir(parents=True, exist_ok=True)
+    _add_shared_log_handler(settings.data_root / "logs" / "data_service.log")
     yield
+
+
+def _add_shared_log_handler(log_path) -> None:
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(str(log_path), mode="a", encoding="utf-8")
+        fh.setFormatter(RunIdFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT))
+        logging.getLogger().addHandler(fh)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Cannot open shared log %s: %s", log_path, e)
 
 
 app = FastAPI(

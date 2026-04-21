@@ -37,6 +37,7 @@ class RunRecord:
     save_model:    bool = False
     webhook_url:   Optional[str] = None
     n_synth_rows:  Optional[int] = None
+    current_job_id: Optional[str] = None  # synthesis job_id текущей итерации
     model_id:      Optional[str] = None
     synth_rows:    Optional[int] = None
     synth_path:    Optional[str] = None   # абсолютный путь к CSV синтетики
@@ -59,15 +60,16 @@ class RunRecord:
 
 def _serialize_run(record: RunRecord) -> str:
     return json.dumps({
-        "run_id":          record.run_id,
-        "dataset_name":    record.dataset_name,
-        "config_name":     record.config_name,
-        "status":          record.status.value,
-        "verdict":         record.verdict,
-        "save_model":      record.save_model,
-        "webhook_url":     record.webhook_url,
-        "n_synth_rows":    record.n_synth_rows,
-        "model_id":        record.model_id,
+        "run_id":           record.run_id,
+        "dataset_name":     record.dataset_name,
+        "config_name":      record.config_name,
+        "status":           record.status.value,
+        "verdict":          record.verdict,
+        "save_model":       record.save_model,
+        "webhook_url":      record.webhook_url,
+        "n_synth_rows":     record.n_synth_rows,
+        "current_job_id":   record.current_job_id,
+        "model_id":         record.model_id,
         "synth_rows":      record.synth_rows,
         "synth_path":      record.synth_path,
         "report_path":     record.report_path,
@@ -90,8 +92,9 @@ def _deserialize_run(raw: str) -> RunRecord:
         verdict=        d.get("verdict"),
         save_model=     d.get("save_model", False),
         webhook_url=    d.get("webhook_url"),
-        n_synth_rows=   d.get("n_synth_rows"),
-        model_id=       d.get("model_id"),
+        n_synth_rows=    d.get("n_synth_rows"),
+        current_job_id=  d.get("current_job_id"),
+        model_id=        d.get("model_id"),
         synth_rows=     d.get("synth_rows"),
         synth_path=     d.get("synth_path"),
         report_path=    d.get("report_path"),

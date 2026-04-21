@@ -25,6 +25,7 @@ pipeline:
   run_preprocessing: true
   holdout_size: 0.2
   random_state: 42
+  max_iterations: 1         # макс. повторных обучений при вердикте FAIL
 
 # ── Генератор ─────────────────────────────────────────────────────────────────
 generator:

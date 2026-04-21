@@ -82,6 +82,7 @@ class PipelineConfig(BaseModel):
     run_preprocessing: bool = True
     holdout_size: float = 0.2
     random_state: int = 42
+    max_iterations: int = 1       # максимум повторных обучений при вердикте FAIL
 
     @field_validator("data_source")
     @classmethod

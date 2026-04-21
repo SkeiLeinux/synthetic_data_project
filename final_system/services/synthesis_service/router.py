@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # -> final_system/
 from config_loader import GeneratorYamlConfig
+from shared.log_context import set_run_id
 from shared.schemas.datasets import SplitMeta
 from shared.schemas.synthesis import SampleRequest, SynthesisJobCreate, SynthesisJobSummary
 from services.synthesis_service.job_store import JobRecord, JobStatus, JobStore, job_store
@@ -187,6 +188,7 @@ def _job_to_summary(rec: JobRecord) -> SynthesisJobSummary:
 # ── background worker ─────────────────────────────────────────────────────────
 
 def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
+    set_run_id(body.run_id)
     store = job_store
     store.update(job_id, status=JobStatus.running, started_at=datetime.now(timezone.utc))
     t0 = time.time()
@@ -214,12 +216,20 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
         logger.info("[job %s] Columns: cat=%d cont=%d total=%d", job_id, len(cat_cols), len(cont_cols), len(train_df.columns))
 
         # 4. Обучение
+        rec = store.get(job_id)
+        if rec and rec.status == JobStatus.cancelled:
+            logger.info("[job %s] Cancelled before fit", job_id)
+            return
         logger.info("[job %s] Fitting generator...", job_id)
         t_fit = time.time()
         generator.fit(train_df, categorical_columns=cat_cols, continuous_columns=cont_cols)
         logger.info("[job %s] Fit done in %.1fs", job_id, time.time() - t_fit)
 
         # 5. Генерация
+        rec = store.get(job_id)
+        if rec and rec.status == JobStatus.cancelled:
+            logger.info("[job %s] Cancelled after fit, before sample", job_id)
+            return
         n_rows = body.n_rows or len(train_df)
         logger.info("[job %s] Sampling %d rows...", job_id, n_rows)
         synth_df = generator.sample(n_rows)
@@ -247,8 +257,7 @@ def _run_job(job_id: str, body: SynthesisJobCreate, settings: Settings) -> None:
                 created_at=datetime.now(timezone.utc).isoformat(),
             )
             generator.save(str(settings.models_dir / f"{model_id}.pkl"))
-            logger.info("[job %s] Model saved: %s (run_id=%s dataset=%s)",
-                        job_id, model_id, body.run_id, body.dataset_name)
+            logger.info("[job %s] Model saved: %s (dataset=%s)", job_id, model_id, body.dataset_name)
 
         store.update(
             job_id,
@@ -304,6 +313,24 @@ def get_job(job_id: str) -> SynthesisJobSummary:
     if rec is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Джоб не найден"})
     return _job_to_summary(rec)
+
+
+# ── DELETE /jobs/{job_id} ─────────────────────────────────────────────────────
+
+@router.delete(
+    "/jobs/{job_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Отменить джоб синтеза",
+)
+def cancel_job(job_id: str) -> Dict[str, Any]:
+    rec = job_store.get(job_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Джоб не найден"})
+    if rec.status in (JobStatus.done, JobStatus.failed, JobStatus.cancelled):
+        return {"job_id": job_id, "status": rec.status}
+    job_store.update(job_id, status=JobStatus.cancelled, finished_at=datetime.now(timezone.utc))
+    logger.info("[job %s] Cancelled via API", job_id)
+    return {"job_id": job_id, "status": JobStatus.cancelled}
 
 
 # ── GET /jobs/{job_id}/dp_report ──────────────────────────────────────────────

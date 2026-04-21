@@ -13,10 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY services/data_service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Исходный код монолитного модуля data_service (DataProcessor, DataIO)
+# Общий модуль DataProcessor / DataIO (используется и gateway, и этим сервисом)
 COPY data_service/ ./data_service/
-# logger_config нужен data_service/processor.py
-COPY logger_config.py .
 # Общие Pydantic-схемы
 COPY shared/ ./shared/
 # Код самого сервиса (main.py, router.py, settings.py)

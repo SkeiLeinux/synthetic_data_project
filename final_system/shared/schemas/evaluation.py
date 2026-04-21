@@ -25,6 +25,7 @@ class PrivacyEvalRequest(BaseModel):
     dp_report: Optional[Dict[str, Any]] = None
     quasi_identifiers: List[str] = []
     sensitive_attribute: Optional[str] = None
+    run_id: Optional[str] = None
 
 
 class UtilityEvalRequest(BaseModel):
@@ -39,3 +40,4 @@ class UtilityEvalRequest(BaseModel):
     target_column: str
     categorical_columns: List[str]
     continuous_columns: List[str]
+    run_id: Optional[str] = None

@@ -17,6 +17,9 @@ from evaluator.utility.utility_evaluator import UtilityConfig, UtilityEvaluator
 from shared.schemas.evaluation import PrivacyEvalRequest, UtilityEvalRequest
 from services.evaluation_service.settings import Settings, get_settings
 
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # already set above, idempotent
+from shared.log_context import set_run_id  # noqa: E402
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,7 @@ def evaluate_privacy(
     body: PrivacyEvalRequest,
     settings: Settings = Depends(get_settings),
 ) -> Dict[str, Any]:
+    set_run_id(body.run_id)
     t0 = time.time()
     logger.info("Privacy eval started: split_id=%s synth_path=%s", body.split_id, body.synth_path)
     split_dir = settings.splits_dir / body.split_id
@@ -81,6 +85,7 @@ def evaluate_utility(
     body: UtilityEvalRequest,
     settings: Settings = Depends(get_settings),
 ) -> Dict[str, Any]:
+    set_run_id(body.run_id)
     t0 = time.time()
     logger.info("Utility eval started: split_id=%s target=%s", body.split_id, body.target_column)
     split_dir = settings.splits_dir / body.split_id

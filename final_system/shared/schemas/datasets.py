@@ -45,6 +45,7 @@ class SplitMeta(BaseModel):
     continuous_columns: List[str]
     target_column: Optional[str] = None
     minimization_report: Optional[Dict[str, Any]] = None
+    profile_path: Optional[str] = None   # путь к profile.json относительно /data
     created_at: datetime
 
 
@@ -64,6 +65,7 @@ class SplitRequest(BaseModel):
     direct_identifiers: List[str] = []
     drop_high_cardinality: bool = False
     cardinality_threshold: float = 0.9
+    run_id: Optional[str] = None
 
     @field_validator("holdout_size")
     @classmethod
