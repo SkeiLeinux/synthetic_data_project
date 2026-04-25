@@ -7,7 +7,7 @@ import json
 import math
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -72,10 +72,9 @@ def _model_summary(path: Path) -> ModelSummary:
 
 @router.get("", response_model=Dict[str, Any])
 def list_models(
-    page:         int = Query(1, ge=1),
-    per_page:     int = Query(20, ge=1, le=100),
-    dataset_name: str | None = Query(None),
-    settings:     Settings = Depends(get_settings),
+    page:     int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    settings: Settings = Depends(get_settings),
     _: None = Depends(require_auth),
 ) -> Dict[str, Any]:
     paths = sorted(settings.models_dir.glob("*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True)
