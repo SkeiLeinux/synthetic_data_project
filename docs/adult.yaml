@@ -1,0 +1,179 @@
+# ==============================================================================
+# Конфигурация: DP-CTGAN (SmartNoise) — с дифференциальной приватностью [default]
+# Датасет: Adult Census Income
+# Использование: python cli.py  (или --config configs/adult.yaml явно)
+#
+# Остальные генераторы:
+#   python cli.py --config configs/adult_dptvae.yaml    # DP-TVAE (Opacus)
+#   python cli.py --config configs/adult_ctgan.yaml     # CTGAN (SDV, без DP)
+#   python cli.py --config configs/adult_tvae.yaml      # TVAE (SDV, без DP)
+#   python cli.py --config configs/adult_copulagan.yaml # CopulaGAN (SDV, без DP)
+# ==============================================================================
+
+# ── Пути ──────────────────────────────────────────────────────────────────────
+paths:
+  logs: logs/app.log
+  output_dir: reporter/reports
+
+# ── Источник входных данных ───────────────────────────────────────────────────
+# type: csv      — загрузка из CSV-файла (path обязателен)
+# type: postgres — загрузка из БД через env-переменную с DSN (dsn_env + query обязательны)
+#
+# Credentials НЕ хранятся в конфиге. Для postgres задайте переменную окружения:
+#   DB_IMPORT_DSN=postgresql://user:password@host:5432/dbname
+data_import:
+  type: csv
+  path: data/adult.csv
+  # Для PostgreSQL (раскомментировать когда БД готова):
+  # dsn_env: DB_IMPORT_DSN          # имя env-переменной с DSN
+  # query: "SELECT * FROM table"    # SQL-запрос для выборки данных
+
+# ── Назначение синтетических данных ──────────────────────────────────────────
+# type: none     — только сохранение в CSV на shared volume (по умолчанию)
+# type: csv      — явное сохранение в CSV (эквивалентно none)
+# type: postgres — дополнительная запись в таблицу БД через env-переменную с DSN
+#
+# Credentials НЕ хранятся в конфиге. Для postgres задайте переменную окружения:
+#   DB_EXPORT_DSN=postgresql://user:password@host:5432/dbname
+data_export:
+  type: none
+  # Для PostgreSQL (раскомментировать когда БД готова):
+  # dsn_env: DB_EXPORT_DSN          # имя env-переменной с DSN
+  # table: synthetic_adult          # целевая таблица
+  # if_exists: replace              # replace | append | fail
+
+# ── Параметры пайплайна ───────────────────────────────────────────────────────
+pipeline:
+  dataset_name: adult_census
+  sample_size: 0            # 0 = взять все строки
+  n_synth_rows: 0           # 0 = совпадает с размером обучающей выборки
+  run_preprocessing: true
+  holdout_size: 0.2         # доля отложенной выборки (0.0–1.0)
+  random_state: 42
+  max_iterations: 1         # макс. повторных обучений при вердикте FAIL
+
+# ── Генератор ─────────────────────────────────────────────────────────────────
+generator:
+  # Тип генератора:
+  #   dpctgan   — DP-CTGAN (SmartNoise Synth), с DP-гарантиями [default]
+  #   dptvae    — DP-TVAE (Opacus + TVAE), с DP-гарантиями
+  #   ctgan     — CTGAN (SDV), без DP, baseline
+  #   tvae      — TVAE (SDV), без DP, baseline
+  #   copulagan — CopulaGAN (SDV), без DP, baseline
+  generator_type: dpctgan
+
+  # Параметры дифференциальной приватности
+  # Рекомендуемые диапазоны epsilon для разных отраслей:
+  #   1.0–2.0 — финансы / здравоохранение (высокий риск, строгий регулятор)
+  #   2.0–5.0 — общий enterprise (умеренный риск, стандартный профиль)
+  #   5.0–10  — R&D / аналитика (низкий риск, качество важнее приватности)
+  epsilon: 3.0            # бюджет приватности; меньше = строже защита
+  preprocessor_eps: 0.5   # доля бюджета на приватный препроцессинг; должно быть < epsilon
+  delta: null             # null = авторасчёт как 1 / (n * sqrt(n))
+  sigma: 5.0              # множитель шума DP-SGD; больше = строже DP, хуже качество
+  max_per_sample_grad_norm: 1.0  # клиппинг нормы градиентов (C в DP-SGD)
+
+  # Параметры обучения
+  epochs: 300
+  batch_size: 500
+  discriminator_steps: 1
+  pac: 1
+
+  # Архитектура
+  embedding_dim: 128
+  generator_dim: [256, 256]
+  discriminator_dim: [256, 256]
+
+  # Оптимизатор
+  generator_lr: 0.0002
+  generator_decay: 0.000001
+  discriminator_lr: 0.0002
+  discriminator_decay: 0.000001
+
+  # Режимы
+  cuda: true
+  verbose: true
+  disabled_dp: false      # true = обычный GAN без шума (baseline для сравнения)
+  loss: cross_entropy
+  nullable: false
+
+  # Воспроизводимость
+  random_seed: 42
+
+# ── Оценка полезности ─────────────────────────────────────────────────────────
+utility:
+  target_column: income
+  task_type: classification   # classification | regression
+  drop_columns:
+    - fnlwgt
+  n_estimators: 100
+  random_state: 42
+
+# ── Оценка приватности ────────────────────────────────────────────────────────
+privacy:
+  quasi_identifiers:
+    - age
+    - education
+    - occupation
+    - sex
+    - race
+  sensitive_attribute: income
+  compute_classical: true
+  compute_distance: true
+  compute_mia: true
+  distance_sample_size: 2000
+  mia_sample_size: 1000
+
+# ── Пороговые значения вердикта ───────────────────────────────────────────────
+# PASS если все проверки пройдены, FAIL если хотя бы одна провалена.
+#
+# Профиль: крупный enterprise (умеренный уровень риска).
+# Обоснование:
+#   max_utility_loss: 0.15  — крупные датасеты дают хорошее качество синтетики;
+#                             потеря > 15% делает данные непригодными для обучения моделей.
+#   max_mean_jsd:     0.20  — JSD > 0.20 означает заметное расхождение распределений,
+#                             что искажает дескриптивную аналитику и отчетность.
+#   max_mia_auc:      0.55  — граница «атака работает чуть лучше случайного угадывания»;
+#                             AUC в диапазоне 0.55–0.60 уже повод расследовать утечку.
+#   max_spent_epsilon: 5.0  — явный потолок ε для защиты от неожиданного расхода бюджета;
+#                             при epsilon: 3.0 это двукратный запас.
+thresholds:
+  max_utility_loss: 0.15    # максимальная потеря ML-метрики (TRTR - TSTR)
+  max_mean_jsd: 0.20        # максимальное среднее JSD по числовым колонкам
+  max_mia_auc: 0.55         # максимальный AUC атаки MIA (0.55 = страховочная граница)
+  require_dcr_privacy_preserved: true
+  require_dp_enabled: true   # при generator_type: ctgan/tvae/copulagan установить false
+  max_spent_epsilon: 5.0    # потолок потраченного ε; при epsilon: 3.0 даёт двукратный запас
+
+# ── Схема данных ──────────────────────────────────────────────────────────────
+# Если задано — используется как есть.
+# Если не задано (или пустые списки) — схема определяется автоматически
+# через DataProcessor.detect_column_types().
+data_schema:
+  categorical:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+    - income
+  continuous:
+    - age
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  # Колонки, которые явно исключаются из схемы (не передаются генератору).
+  # Полезно для технических полей (ID, веса записей и т.п.).
+  exclude:
+    - fnlwgt
+
+  # ── Минимизация данных (data minimization по модели ПНСТ) ────────────────────
+  # direct_identifiers — колонки, удаляемые до синтеза: имена, email, phone, id.
+  # Для Adult Census прямых идентификаторов нет — список пустой.
+  direct_identifiers: []
+  drop_high_cardinality: false   # удалять категориальные колонки почти-уникальных значений
+  cardinality_threshold: 0.9     # порог доли уникальных значений (0.9 = 90%)

@@ -1,0 +1,278 @@
+openapi: 3.1.0
+
+info:
+  title: Evaluation Service
+  version: 1.0.0
+  description: |
+    Внутренний сервис: оценка приватности и полезности синтетических данных.
+    Лёгкий образ (sklearn / scipy / pandas, без torch).
+
+    **Микросервис:** `evaluation_service`.
+    **Порт:** `8003`.
+    **Базовый префикс:** `/api/v1` (кроме `/health`).
+    **Авторизация:** отсутствует (внутренняя сеть docker compose).
+
+    Источник данных — shared Docker volume `/data`. Сервис читает train.csv,
+    holdout.csv (по `split_id`) и synthetic.csv (по `synth_path`).
+
+servers:
+  - url: http://localhost:8003
+  - url: http://evaluation_service:8003
+    description: Внутри docker-сети
+
+tags:
+  - name: system
+  - name: evaluation
+    description: Эндпоинты оценки
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Healthcheck
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /api/v1/evaluate/privacy:
+    post:
+      tags: [evaluation]
+      summary: Оценка приватности
+      description: |
+        Возвращает структурированный privacy_report c тремя независимыми
+        разделами:
+
+        * **`dp_guarantees`** — формальные гарантии генератора (из `dp_report`);
+        * **`empirical_risk`** — эмпирические метрики:
+            * `distance_metrics.dcr` (Distance to Closest Record),
+            * `distance_metrics.nndr` (Nearest Neighbor Distance Ratio),
+            * `membership_inference` — proxy MIA (RandomForest по DCR-фичам);
+        * **`diagnostic.classical`** — k-anonymity, l-diversity, t-closeness
+          (требуют `quasi_identifiers` и `sensitive_attribute`).
+
+        MIA — distance-based proxy (не полноценная shadow-model атака
+        Шокри). Низкий AUC — необходимое, но не достаточное условие
+        отсутствия утечки.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrivacyEvalRequest" }
+            example:
+              split_id: "8a7b6c5d-1234-4abc-8def-fedcba987654"
+              synth_path: "synth/abcdef12-3456-7890-abcd-ef1234567890/synthetic_pending.csv"
+              quasi_identifiers: [age, education, occupation, sex, race]
+              sensitive_attribute: income
+              run_id: "f6c1b2c0-1234-4abc-8def-123456789abc"
+              dp_report:
+                synthesizer: DPCTGANGenerator
+                status: fitted
+                dp_config:
+                  is_dp_enabled: true
+                  epsilon_initial: 3.0
+                  delta: 4.47e-05
+                dp_spent:
+                  spent_epsilon_final: 2.48
+                  epochs_completed: 87
+                  epochs_requested: 300
+      responses:
+        "200":
+          description: privacy_report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivacyReport" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/evaluate/utility:
+    post:
+      tags: [evaluation]
+      summary: Оценка полезности
+      description: |
+        Возвращает utility_report:
+
+        * **`statistical`** — JSD по числовым, TVD по категориальным,
+          summary `mean_jsd`/`mean_tvd`;
+        * **`correlations`** — Pearson MAE и Cramér's V MAE;
+        * **`ml_efficacy`** — Random Forest TRTR (обучение и тест на real),
+          TSTR (обучение на synth, тест на real_holdout), Utility Loss.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UtilityEvalRequest" }
+            example:
+              split_id: "8a7b6c5d-1234-4abc-8def-fedcba987654"
+              synth_path: "synth/abcdef12-3456-7890-abcd-ef1234567890/synthetic_pending.csv"
+              target_column: income
+              categorical_columns: [workclass, education, marital-status, occupation, relationship, race, sex, native-country, income]
+              continuous_columns: [age, education-num, capital-gain, capital-loss, hours-per-week]
+              run_id: "f6c1b2c0-1234-4abc-8def-123456789abc"
+      responses:
+        "200":
+          description: utility_report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UtilityReport" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  responses:
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: NOT_FOUND
+            message: "synthetic.csv не найден"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string }
+        message: { type: string }
+
+    PrivacyEvalRequest:
+      type: object
+      required: [split_id, synth_path]
+      properties:
+        split_id:            { type: string, format: uuid }
+        synth_path:          { type: string, description: "Путь к synthetic.csv относительно /data или абсолютный" }
+        dp_report:           { type: object, additionalProperties: true, nullable: true }
+        quasi_identifiers:   { type: array, items: { type: string } }
+        sensitive_attribute: { type: string, nullable: true }
+        run_id:              { type: string, format: uuid, nullable: true }
+
+    UtilityEvalRequest:
+      type: object
+      required: [split_id, synth_path, target_column, categorical_columns, continuous_columns]
+      properties:
+        split_id:            { type: string, format: uuid }
+        synth_path:          { type: string }
+        target_column:       { type: string }
+        categorical_columns: { type: array, items: { type: string } }
+        continuous_columns:  { type: array, items: { type: string } }
+        run_id:              { type: string, format: uuid, nullable: true }
+
+    PrivacyReport:
+      type: object
+      properties:
+        metadata:
+          type: object
+          properties:
+            real_train_rows:   { type: integer }
+            real_holdout_rows: { type: integer }
+            synth_rows:        { type: integer }
+            eval_duration_sec: { type: number }
+        dp_guarantees:
+          type: object
+          properties:
+            available:           { type: boolean }
+            is_dp_enabled:       { type: boolean, nullable: true }
+            epsilon_initial:     { type: number, nullable: true }
+            delta:               { type: number, nullable: true }
+            spent_epsilon_final: { type: number, nullable: true }
+            epochs_completed:    { type: integer, nullable: true }
+            epochs_requested:    { type: integer, nullable: true }
+        empirical_risk:
+          type: object
+          properties:
+            distance_metrics:
+              type: object
+              properties:
+                dcr:
+                  type: object
+                  properties:
+                    privacy_preserved: { type: boolean }
+                    interpretation:    { type: string }
+                nndr:
+                  type: object
+                  properties:
+                    synth_mean:      { type: number }
+                    share_below_0.1: { type: number }
+            membership_inference:
+              type: object
+              properties:
+                attack_auc:     { type: number }
+                interpretation: { type: string, example: "protected: атака не лучше случайного угадывания" }
+        diagnostic:
+          type: object
+          properties:
+            classical:
+              type: object
+              properties:
+                k_anonymity:  { type: integer }
+                l_diversity:  { type: integer }
+                t_closeness:  { type: number }
+
+    UtilityReport:
+      type: object
+      properties:
+        metadata:
+          type: object
+          properties:
+            real_train_rows:   { type: integer }
+            real_test_rows:    { type: integer }
+            synth_rows:        { type: integer }
+            real_columns:      { type: integer }
+            target_column:     { type: string }
+            task_type:         { type: string, enum: [classification, regression] }
+            eval_duration_sec: { type: number }
+        statistical:
+          type: object
+          properties:
+            numerical:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  jsd:        { type: number }
+                  mean_delta: { type: number }
+            categorical:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  tvd: { type: number }
+            summary:
+              type: object
+              properties:
+                mean_jsd: { type: number }
+                mean_tvd: { type: number }
+        correlations:
+          type: object
+          properties:
+            pearson_corr_mae: { type: number, description: "MAE между матрицами корреляций real vs synth" }
+            cramers_v_mae:    { type: number, description: "MAE между матрицами Cramér's V" }
+        ml_efficacy:
+          type: object
+          description: "TRTR (train real, test real) vs TSTR (train synth, test real)"
+          properties:
+            trtr:
+              type: object
+              properties:
+                f1_weighted: { type: number }
+                roc_auc:     { type: number }
+                mae:         { type: number }
+                r2:          { type: number }
+            tstr:
+              type: object
+              properties:
+                f1_weighted: { type: number }
+                roc_auc:     { type: number }
+                mae:         { type: number }
+                r2:          { type: number }
+            utility_loss:
+              type: object
+              properties:
+                metric:         { type: string, example: f1_weighted }
+                value:          { type: number, description: "TRTR_score - TSTR_score" }
+                interpretation: { type: string, example: "ok (loss < 10%)" }

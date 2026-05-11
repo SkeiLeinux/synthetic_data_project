@@ -1,0 +1,315 @@
+openapi: 3.1.0
+
+info:
+  title: Synthesis Service
+  version: 1.0.0
+  description: |
+    Внутренний сервис: обучение генераторов синтетических данных и
+    последующее сэмплирование. Тяжёлый образ (~13 ГБ): torch + opacus +
+    smartnoise-synth + sdv. Поддерживает GPU (CUDA).
+
+    **Микросервис:** `synthesis_service`.
+    **Порт:** `8002`.
+    **Базовый префикс:** `/api/v1` (кроме `/health`).
+    **Авторизация:** отсутствует (внутренняя сеть docker compose).
+
+    Поддерживаемые генераторы:
+      * `dpctgan` — DP-CTGAN (SmartNoise Synth, с DP-гарантиями);
+      * `dptvae`  — DP-TVAE (Opacus + TVAE, с DP-гарантиями);
+      * `ctgan`   — CTGAN (SDV, без DP, baseline);
+      * `tvae`    — TVAE (SDV, без DP, baseline);
+      * `copulagan` — CopulaGAN (SDV, без DP, baseline).
+
+    Состояние джобов хранится **in-memory** — теряется при рестарте контейнера.
+
+servers:
+  - url: http://localhost:8002
+  - url: http://synthesis_service:8002
+    description: Внутри docker-сети
+
+tags:
+  - name: system
+  - name: jobs
+    description: Жизненный цикл джоба обучения генератора
+  - name: models
+    description: Сэмплирование из сохранённой модели
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Healthcheck
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /api/v1/jobs:
+    post:
+      tags: [jobs]
+      summary: Запустить обучение генератора (асинхронно)
+      description: |
+        Создаёт фоновый поток `_run_job`, возвращает 202 + `job_id`.
+        Конфигурация генератора передаётся **inline** в теле запроса
+        (а не путём чтения YAML с диска) — это развязывает Synthesis
+        Service от управления конфигами.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SynthesisJobCreate" }
+            example:
+              split_id: "8a7b6c5d-1234-4abc-8def-fedcba987654"
+              run_id:   "f6c1b2c0-1234-4abc-8def-123456789abc"
+              dataset_name: "adult_census"
+              save_model: true
+              n_rows: null
+              generator:
+                generator_type: dpctgan
+                epsilon: 3.0
+                preprocessor_eps: 0.5
+                delta: null
+                sigma: 5.0
+                max_per_sample_grad_norm: 1.0
+                epochs: 300
+                batch_size: 500
+                embedding_dim: 128
+                generator_dim: [256, 256]
+                discriminator_dim: [256, 256]
+                cuda: true
+                disabled_dp: false
+                random_seed: 42
+      responses:
+        "202":
+          description: Джоб создан, обучение запущено
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SynthesisJobSummary" }
+
+  /api/v1/jobs/{job_id}:
+    parameters:
+      - { name: job_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [jobs]
+      summary: Статус джоба
+      description: |
+        Используется Gateway-ем как ручка поллинга
+        (`api.clients.poll_synthesis_job`, интервал 10 секунд).
+        Возможные значения `status`:
+          * `queued`    — джоб создан, ещё не начался;
+          * `running`   — обучение идёт;
+          * `done`      — успешно (`synth_path`, `dp_report`, `model_id` заполнены);
+          * `failed`    — ошибка (`error_message` заполнен);
+          * `cancelled` — отменён через DELETE.
+      responses:
+        "200":
+          description: Деталь джоба
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SynthesisJobSummary" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    delete:
+      tags: [jobs]
+      summary: Отменить джоб
+      description: |
+        Корректно завершается:
+          * до `fit()` — джоб не запускается;
+          * между `fit()` и `sample()` — sample не выполняется.
+        После `done`/`failed`/`cancelled` — no-op.
+      responses:
+        "200":
+          description: Состояние после отмены
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string, format: uuid }
+                  status: { $ref: "#/components/schemas/JobStatus" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/jobs/{job_id}/dp_report:
+    parameters:
+      - { name: job_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [jobs]
+      summary: DP-отчёт джоба
+      description: Доступен только при `status=done`.
+      responses:
+        "200":
+          description: DP-отчёт
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DPReport" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Джоб ещё не завершён
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/models/{model_id}/sample:
+    parameters:
+      - { name: model_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [models]
+      summary: Сэмплирование из сохранённой модели
+      description: DP-бюджет не расходуется (post-processing immunity DP).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SampleRequest" }
+            example: { n_rows: 10000 }
+      responses:
+        "200":
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  synth_path: { type: string, example: "synth/{job_id}/synthetic.csv" }
+                  rows:       { type: integer }
+                  model_id:   { type: string, format: uuid }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500":
+          description: Ошибка сэмплирования
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  responses:
+    NotFound:
+      description: Не найдено
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { code: NOT_FOUND, message: "Джоб не найден" }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string }
+        message: { type: string }
+
+    JobStatus:
+      type: string
+      enum: [queued, running, done, failed, cancelled]
+
+    GeneratorYamlConfig:
+      type: object
+      description: |
+        Сериализованный конфиг генератора. Применяемые поля зависят от
+        `generator_type` — см. описание ниже.
+      required: [generator_type]
+      properties:
+        generator_type:
+          type: string
+          enum: [dpctgan, dptvae, ctgan, tvae, copulagan]
+        # ─── DP (dpctgan + dptvae) ─────────────────────────────────────────────
+        epsilon:                  { type: number, default: 3.0,  description: "DP-бюджет (для DP-генераторов)" }
+        delta:                    { type: number, nullable: true, description: "δ; null = автонастройка 1/(n·√n)" }
+        # ─── DP-CTGAN specific ─────────────────────────────────────────────────
+        preprocessor_eps:         { type: number, default: 0.5, description: "Доля бюджета на приватный препроцессинг; должна быть < epsilon" }
+        sigma:                    { type: number, default: 5.0, description: "noise multiplier DP-SGD" }
+        max_per_sample_grad_norm: { type: number, default: 1.0, description: "Клиппинг нормы градиентов (C в DP-SGD)" }
+        disabled_dp:              { type: boolean, default: false, description: "true = baseline без DP" }
+        loss:                     { type: string, default: cross_entropy }
+        nullable:                 { type: boolean, default: false }
+        # ─── DP-TVAE specific ──────────────────────────────────────────────────
+        max_grad_norm: { type: number, default: 1.0 }
+        # ─── Общие гиперпараметры ──────────────────────────────────────────────
+        epochs:        { type: integer, default: 300 }
+        batch_size:    { type: integer, default: 500 }
+        embedding_dim: { type: integer, default: 128 }
+        cuda:          { type: boolean, default: true }
+        verbose:       { type: boolean, default: true }
+        random_seed:   { type: integer, nullable: true, default: 42 }
+        # ─── CTGAN / CopulaGAN architecture ────────────────────────────────────
+        discriminator_steps: { type: integer, default: 1 }
+        pac:                 { type: integer, default: 1 }
+        generator_dim:       { type: array, items: { type: integer }, default: [256, 256] }
+        discriminator_dim:   { type: array, items: { type: integer }, default: [256, 256] }
+        generator_lr:        { type: number, default: 0.0002 }
+        generator_decay:     { type: number, default: 0.000001 }
+        discriminator_lr:    { type: number, default: 0.0002 }
+        discriminator_decay: { type: number, default: 0.000001 }
+        log_frequency:       { type: boolean, default: true }
+        # ─── TVAE / DP-TVAE architecture ───────────────────────────────────────
+        compress_dims:   { type: array, items: { type: integer }, default: [128, 128] }
+        decompress_dims: { type: array, items: { type: integer }, default: [128, 128] }
+        l2scale:         { type: number, default: 0.00001 }
+        loss_factor:     { type: integer, default: 2 }
+
+    SynthesisJobCreate:
+      type: object
+      required: [split_id, generator]
+      properties:
+        split_id:     { type: string, format: uuid, description: "ID сплита из data_service" }
+        generator:    { $ref: "#/components/schemas/GeneratorYamlConfig" }
+        n_rows:       { type: integer, nullable: true, description: "null = размер train" }
+        save_model:   { type: boolean, default: false }
+        run_id:       { type: string, format: uuid, nullable: true }
+        dataset_name: { type: string, nullable: true }
+
+    SynthesisJobSummary:
+      type: object
+      required: [job_id, status, created_at]
+      properties:
+        job_id:        { type: string, format: uuid }
+        status:        { $ref: "#/components/schemas/JobStatus" }
+        model_id:      { type: string, format: uuid, nullable: true }
+        synth_path:    { type: string, nullable: true, description: "Относительно /data, например synth/{job_id}/synthetic_pending.csv" }
+        dp_report:     { $ref: "#/components/schemas/DPReport", nullable: true }
+        error_message: { type: string, nullable: true }
+        created_at:    { type: string, format: date-time }
+        started_at:    { type: string, format: date-time, nullable: true }
+        finished_at:   { type: string, format: date-time, nullable: true }
+
+    SampleRequest:
+      type: object
+      required: [n_rows]
+      properties:
+        n_rows: { type: integer, minimum: 1, example: 10000 }
+        job_id: { type: string, format: uuid, nullable: true, description: "Если задан — synth сохраняется в synth/{job_id}/" }
+
+    DPReport:
+      type: object
+      description: |
+        Структура отчёта от `BaseGenerator.privacy_report()`. Для не-DP
+        генераторов поля `dp_config`/`dp_spent` равны `null`.
+      properties:
+        synthesizer: { type: string, example: "DPCTGANGenerator" }
+        status:      { type: string, enum: [fitted, not_fitted] }
+        dp_config:
+          type: object
+          nullable: true
+          properties:
+            is_dp_enabled:   { type: boolean }
+            epsilon_initial: { type: number }
+            delta:           { type: number }
+            sigma:           { type: number }
+            max_grad_norm:   { type: number }
+            batch_size:      { type: integer }
+        dp_spent:
+          type: object
+          nullable: true
+          properties:
+            epsilon_target_after_preprocess: { type: number }
+            spent_epsilon_final:             { type: number }
+            epochs_requested:                { type: integer }
+            epochs_completed:                { type: integer }
+        reproducibility:
+          type: object
+          properties:
+            random_seed: { type: integer, nullable: true }

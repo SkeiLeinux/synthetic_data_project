@@ -1,0 +1,171 @@
+openapi: 3.1.0
+
+info:
+  title: Reporting Service
+  version: 1.0.0
+  description: |
+    Внутренний сервис: сборка финального JSON-отчёта пайплайна и
+    вынесение агрегированного вердикта PASS / FAIL / PARTIAL по
+    настраиваемым порогам. Самый минимальный образ (только fastapi +
+    pydantic). Сам метрики не считает — только склеивает готовые
+    sub-отчёты от Evaluation и Synthesis сервисов.
+
+    **Микросервис:** `reporting_service`.
+    **Порт:** `8004`.
+    **Базовый префикс:** `/api/v1` (кроме `/health`).
+    **Авторизация:** отсутствует (внутренняя сеть docker compose).
+
+    Логика вердикта:
+      * **PASS**    — все активные проверки (`utility_ok`, `privacy_ok`, `dp_ok`) пройдены;
+      * **FAIL**    — хотя бы одна проверка провалена; `issues` содержит список причин;
+      * **PARTIAL** — отсутствует хотя бы один sub-отчёт.
+
+servers:
+  - url: http://localhost:8004
+  - url: http://reporting_service:8004
+    description: Внутри docker-сети
+
+tags:
+  - name: system
+  - name: reports
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Healthcheck
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /api/v1/reports:
+    post:
+      tags: [reports]
+      summary: Собрать финальный отчёт и вынести вердикт
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReportRequest" }
+            example:
+              run_id: "f6c1b2c0-1234-4abc-8def-123456789abc"
+              dataset_name: adult_census
+              generator_type: dpctgan
+              dp_report:
+                synthesizer: DPCTGANGenerator
+                status: fitted
+                dp_config: { is_dp_enabled: true, epsilon_initial: 3.0, delta: 4.47e-05 }
+                dp_spent:  { spent_epsilon_final: 2.48, epochs_completed: 87 }
+              utility_report:
+                statistical: { summary: { mean_jsd: 0.04, mean_tvd: 0.18 } }
+                ml_efficacy: { utility_loss: { metric: f1_weighted, value: 0.012, interpretation: "ok (loss < 10%)" } }
+              privacy_report:
+                empirical_risk:
+                  membership_inference: { attack_auc: 0.516 }
+                  distance_metrics:
+                    dcr: { privacy_preserved: true }
+                diagnostic:
+                  classical: { k_anonymity: 12, l_diversity: 3, t_closeness: 0.12 }
+              minimization_report:
+                removed_direct_identifiers: []
+                removed_high_cardinality:   []
+                columns_before: 15
+                columns_after:  14
+              thresholds:
+                max_utility_loss:  0.15
+                max_mean_jsd:      0.20
+                max_mia_auc:       0.55
+                require_dcr_privacy_preserved: true
+                require_dp_enabled: true
+                max_spent_epsilon: 5.0
+      responses:
+        "201":
+          description: Отчёт собран и сохранён
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportResponse" }
+        "500":
+          description: Ошибка записи на диск
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string }
+        message: { type: string }
+
+    Verdict:
+      type: string
+      enum: [PASS, FAIL, PARTIAL]
+
+    VerdictThresholdsRequest:
+      type: object
+      properties:
+        max_utility_loss:              { type: number, default: 0.25, description: "Макс. TRTR_score - TSTR_score" }
+        max_mean_jsd:                  { type: number, default: 0.40 }
+        max_mia_auc:                   { type: number, default: 0.60, description: "Atака на принадлежность; ≤ 0.55 — рекомендованный профиль" }
+        require_dcr_privacy_preserved: { type: boolean, default: true }
+        require_dp_enabled:            { type: boolean, default: true }
+        max_spent_epsilon:             { type: number, nullable: true, default: null, description: "null = не проверять" }
+
+    ReportRequest:
+      type: object
+      required: [run_id, dataset_name, generator_type]
+      properties:
+        run_id:              { type: string, format: uuid }
+        dataset_name:        { type: string }
+        generator_type:      { type: string, enum: [dpctgan, dptvae, ctgan, tvae, copulagan] }
+        dp_report:           { type: object, additionalProperties: true, nullable: true }
+        utility_report:      { type: object, additionalProperties: true, nullable: true }
+        privacy_report:      { type: object, additionalProperties: true, nullable: true }
+        minimization_report: { type: object, additionalProperties: true, nullable: true }
+        thresholds:          { $ref: "#/components/schemas/VerdictThresholdsRequest" }
+
+    VerdictBlock:
+      type: object
+      properties:
+        overall:     { $ref: "#/components/schemas/Verdict" }
+        utility_ok:  { type: boolean, nullable: true }
+        privacy_ok:  { type: boolean, nullable: true }
+        dp_ok:       { type: boolean, nullable: true }
+        issues:
+          type: array
+          items: { type: string }
+          example:
+            - "Utility Loss 0.180 > порога 0.15"
+            - "MIA AUC 0.602 > порога 0.55 (риск утечки)"
+
+    Report:
+      type: object
+      properties:
+        report_id:      { type: string, format: uuid }
+        process_id:     { type: string, format: uuid, nullable: true }
+        generated_at:   { type: string, format: date-time }
+        dataset_name:   { type: string }
+        generator_type: { type: string }
+        verdict:        { $ref: "#/components/schemas/VerdictBlock" }
+        data_processing:
+          type: object
+          properties:
+            minimization: { type: object, additionalProperties: true }
+        generator: { type: object, additionalProperties: true, nullable: true }
+        utility:   { type: object, additionalProperties: true, nullable: true }
+        privacy:   { type: object, additionalProperties: true, nullable: true }
+
+    ReportResponse:
+      type: object
+      required: [report_path, report]
+      properties:
+        report_path: { type: string, example: "/data/reports/adult_census__dpctgan__20260425_103015.json" }
+        report:      { $ref: "#/components/schemas/Report" }
