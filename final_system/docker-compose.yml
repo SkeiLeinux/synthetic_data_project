@@ -1,0 +1,174 @@
+services:
+
+  # ── Gateway / Orchestrator (порт 8000) ───────────────────────────────────
+  # Тонкий оркестратор: HTTP-вход, Redis-state, вызовы микросервисов.
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DATA_SERVICE_URL=http://data_service:8001
+      - SYNTHESIS_SERVICE_URL=http://synthesis_service:8002
+      - EVALUATION_SERVICE_URL=http://evaluation_service:8003
+      - REPORTING_SERVICE_URL=http://reporting_service:8004
+      - MODELS_DIR=/data/models
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs   # CRUD через /api/v1/configs + чтение в _execute_pipeline
+      - ./logs:/app/logs
+      - shared_data:/data        # datasets/splits/synth/models/reports — всё через shared volume
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      data_service:
+        condition: service_healthy
+      synthesis_service:
+        condition: service_healthy
+      evaluation_service:
+        condition: service_healthy
+      reporting_service:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  # ── PostgreSQL (System Storage) ──────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../db/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d synthetic_data_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: on-failure
+
+  # ── User DB (порт 5434) ──────────────────────────────────────────────────────
+  # Имитирует внешнюю БД пользователя: raw_data (источник) + synth_data (экспорт).
+  user_db:
+    image: postgres:16-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: ${USER_DB_USER:-user}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD:-user}
+      POSTGRES_DB: postgres
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+      - ../db/init_user_db.sh:/docker-entrypoint-initdb.d/init_user_db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER:-user} -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: on-failure
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Data Service (порт 8001) ───────────────────────────────────────────────
+  data_service:
+    build:
+      context: .
+      dockerfile: services/data_service/Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - shared_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+
+  # ── Synthesis Service (порт 8002) ─────────────────────────────────────────
+  # Фаза 4. Тяжёлый образ (torch + opacus + smartnoise + sdv).
+  synthesis_service:
+    build:
+      context: .
+      dockerfile: services/synthesis_service/Dockerfile
+    ports:
+      - "8002:8002"
+    volumes:
+      - shared_data:/data
+      # configs больше не монтируются — Gateway передаёт generator-конфиг
+      # inline в теле POST /api/v1/jobs.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+
+  # ── Evaluation Service (порт 8003) ────────────────────────────────────────
+  # Фаза 3. Лёгкий образ (sklearn/scipy, без torch).
+  evaluation_service:
+    build:
+      context: .
+      dockerfile: services/evaluation_service/Dockerfile
+    ports:
+      - "8003:8003"
+    volumes:
+      - shared_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+
+  # ── Reporting Service (порт 8004) ─────────────────────────────────────────
+  # Фаза 2. Минимальный образ (только fastapi + pydantic).
+  reporting_service:
+    build:
+      context: .
+      dockerfile: services/reporting_service/Dockerfile
+    ports:
+      - "8004:8004"
+    volumes:
+      - shared_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+
+volumes:
+  redis_data:
+  postgres_data:
+  user_db_data:
+  shared_data:    # Shared Volume: /data/{datasets,splits,synth,models,reports}

@@ -1,0 +1,90 @@
+paths:
+  logs: logs/app.log
+  output_dir: reporter/reports
+
+data_import:
+  type: csv
+  path: data/adult_tiny.csv
+
+data_export:
+  type: none
+
+pipeline:
+  dataset_name: adult_tiny_e2e
+  sample_size: 0
+  n_synth_rows: 0
+  run_preprocessing: true
+  holdout_size: 0.2
+  random_state: 42
+  max_iterations: 1
+
+generator:
+  generator_type: ctgan
+  epochs: 5
+  batch_size: 100
+  embedding_dim: 64
+  generator_dim: [64, 64]
+  discriminator_dim: [64, 64]
+  generator_lr: 0.0002
+  generator_decay: 0.000001
+  discriminator_lr: 0.0002
+  discriminator_decay: 0.000001
+  discriminator_steps: 1
+  pac: 10
+  cuda: false
+  verbose: true
+  log_frequency: true
+  random_seed: 42
+
+utility:
+  target_column: income
+  task_type: classification
+  drop_columns:
+    - fnlwgt
+  n_estimators: 50
+  random_state: 42
+
+privacy:
+  quasi_identifiers:
+    - age
+    - education
+    - occupation
+    - sex
+    - race
+  sensitive_attribute: income
+  compute_classical: true
+  compute_distance: true
+  compute_mia: true
+  distance_sample_size: 300
+  mia_sample_size: 150
+
+thresholds:
+  max_utility_loss: 0.50
+  max_mean_jsd: 0.50
+  max_mia_auc: 0.70
+  require_dcr_privacy_preserved: false
+  require_dp_enabled: false
+  max_spent_epsilon: null
+
+data_schema:
+  categorical:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+    - income
+  continuous:
+    - age
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  exclude:
+    - fnlwgt
+  direct_identifiers: []
+  drop_high_cardinality: false
+  cardinality_threshold: 0.9

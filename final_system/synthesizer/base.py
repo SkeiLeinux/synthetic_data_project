@@ -80,10 +80,25 @@ class BaseGenerator(ABC):
 
     # ── Вспомогательные методы для подклассов ─────────────────────────────────
 
+    def set_metadata(self, **kwargs: Any) -> None:
+        """Устанавливает произвольные метаданные для сохранения вместе с моделью.
+
+        Вызывается перед save() чтобы включить в payload: run_id, dataset_name, и т.п.
+        Ключи добавляются / перезаписываются инкрементально.
+        """
+        if not hasattr(self, "_extra_metadata"):
+            self._extra_metadata: Dict[str, Any] = {}
+        self._extra_metadata.update(kwargs)
+
     def _pickle_save(self, path: str, payload: Dict[str, Any]) -> None:
-        """Сохраняет payload через pickle. Проверяет, что модель обучена."""
+        """Сохраняет payload через pickle. Проверяет, что модель обучена.
+
+        Автоматически добавляет поля, установленные через set_metadata() —
+        run_id, dataset_name и прочие метаданные запуска.
+        """
         if not getattr(self, "_is_fitted", False):
             raise RuntimeError("Нельзя сохранить необученную модель.")
+        payload.update(getattr(self, "_extra_metadata", {}))
         try:
             with open(path, "wb") as f:
                 pickle.dump(payload, f)

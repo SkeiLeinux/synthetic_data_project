@@ -25,6 +25,7 @@ class Settings(BaseSettings):
         DEFAULT_CONFIG   — конфиг по умолчанию (используется если не указан config_name)
         LOG_PATH         — путь к лог-файлу
         DB_DISABLED      — true = не использовать ProcessRegistry
+        REDIS_URL        — строка подключения к Redis (default: redis://localhost:6379/0)
     """
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -37,13 +38,27 @@ class Settings(BaseSettings):
     # Пути (относительно final_system/)
     base_dir: Path = Path(__file__).parent.parent
     data_dir: Path = Path(__file__).parent.parent / "data"
-    models_dir: Path = Path(__file__).parent.parent / "models"
+    models_dir: Path = Path("/data") / "models"
     configs_dir: Path = Path(__file__).parent.parent / "configs"
-    reports_dir: Path = Path(__file__).parent.parent / "reporter" / "reports"
+    reports_dir: Path = Path("/data") / "reports"   # shared volume — пишет reporting_service, читает Gateway
     log_path: str = "logs/app.log"
+    data_root: Path = Path("/data")   # shared volume; переопределяется через DATA_ROOT
 
     default_config: str = "configs/adult.yaml"
     db_disabled: bool = False
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "synthetic_data_db"
+    db_user: str = "postgres"
+    db_password: str = ""        # обязательно задать в .env: DB_PASSWORD=...
+    db_schema: str = "synthetic_data_schema"
+    redis_url: str = "redis://localhost:6379/0"
+
+    # URL микросервисов (задаются в docker-compose через env).
+    data_service_url: str = ""
+    synthesis_service_url: str = ""
+    evaluation_service_url: str = ""
+    reporting_service_url: str = ""
 
 
 @lru_cache

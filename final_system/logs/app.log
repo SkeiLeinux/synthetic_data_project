@@ -1,53 +1,173 @@
-[2025-06-24 20:27:17] [INFO] __main__: database data loaded
-[2025-06-24 20:27:17] [INFO] __main__: Подключение и загрузка данных из БД
-[2025-06-24 20:27:17] [INFO] data_manager: Загрузка данных из CSV: adult.csv
-[2025-06-24 20:27:17] [INFO] data_manager: Загружено 32561 строк из CSV
-[2025-06-24 20:27:17] [INFO] __main__: Загружено 32561 записей
-[2025-06-24 20:27:17] [INFO] __main__: Итерация генерации №1
-[2025-06-24 20:29:09] [INFO] validator: k‑анонимность = 31 (≥10?)
-[2025-06-24 20:29:09] [INFO] validator: l‑разнообразие = 10 (≥3?)
-[2025-06-24 20:29:09] [INFO] validator: t‑близость = 0.4113 (<0.9?)
-[2025-06-24 20:29:09] [INFO] __main__: Все проверки успешно пройдены, сохраняем датасет
-[2025-06-24 20:29:10] [INFO] data_manager: Сохранено 26029 строк в таблицу synthetic_data
-[2025-06-24 20:29:11] [INFO] validator: 
-=== Общая оценка качества синтетики: 89.20% ===
-[2025-06-24 20:29:11] [INFO] validator: 
-— Column Shapes —
-[2025-06-24 20:29:11] [INFO] validator:             Column        Metric     Score
-0              age  KSComplement  0.955704
-1        workclass  TVComplement  0.959374
-2           fnlwgt  KSComplement  0.964476
-3        education  TVComplement  0.925476
-4    education-num  KSComplement  0.942177
-5   marital-status  TVComplement  0.960796
-6       occupation  TVComplement  0.892235
-7     relationship  TVComplement  0.955710
-8             race  TVComplement  0.969456
-9              sex  TVComplement  0.978270
-10    capital-gain  KSComplement  0.770162
-11    capital-loss  KSComplement  0.734956
-12  hours-per-week  KSComplement  0.915298
-13  native-country  TVComplement  0.892548
-14          income  TVComplement  0.941183
-15         age_bin  TVComplement  0.970265
-16         edu_bin  TVComplement  0.984103
-17     marital_bin  TVComplement  0.992528
-18        race_bin  TVComplement  1.000000
-[2025-06-24 20:29:11] [INFO] validator: 
-— Column Pair Trends —
-[2025-06-24 20:29:11] [INFO] validator:         Column 1        Column 2                 Metric     Score  Real Correlation  Synthetic Correlation
-0            age       workclass  ContingencySimilarity  0.871645               NaN                    NaN
-1            age          fnlwgt  CorrelationSimilarity  0.966632         -0.076447              -0.009712
-2            age       education  ContingencySimilarity  0.854890               NaN                    NaN
-3            age   education-num  CorrelationSimilarity  0.998887          0.036224               0.033998
-4            age  marital-status  ContingencySimilarity  0.848705               NaN                    NaN
-..           ...             ...                    ...       ...               ...                    ...
-166      age_bin     marital_bin  ContingencySimilarity  0.970265               NaN                    NaN
-167      age_bin        race_bin  ContingencySimilarity  0.970265               NaN                    NaN
-168      edu_bin     marital_bin  ContingencySimilarity  0.949213               NaN                    NaN
-169      edu_bin        race_bin  ContingencySimilarity  0.984103               NaN                    NaN
-170  marital_bin        race_bin  ContingencySimilarity  0.992528               NaN                    NaN
-
-[171 rows x 6 columns]
-[2025-06-24 20:29:11] [INFO] data_manager: Соединение с базой данных закрыто
-[2025-06-24 20:29:11] [INFO] __main__: Завершение работы программы
+[2026-04-21 11:57:57] [INFO] api.main: Gateway started (log_path=logs/app.log)
+[2026-04-21 12:05:58] [INFO] api.main: Gateway started (log_path=logs/app.log)
+[2026-04-21 12:06:58] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Pipeline started: dataset= config=/app/configs/adult_dpctgan_db.yaml
+[2026-04-21 12:06:58] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 1/7: uploading dataset (source=postgres)
+[2026-04-21 12:06:59] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: POST http://data_service:8001/api/v1/datasets/from-db "HTTP/1.1 201 Created"
+[2026-04-21 12:06:59] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 1/7 done: dataset_id=c20da180-b299-4f74-846b-b5e6dd4f91df rows=32561
+[2026-04-21 12:06:59] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 2/7: preprocessing + holdout split
+[2026-04-21 12:07:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: POST http://data_service:8001/api/v1/datasets/c20da180-b299-4f74-846b-b5e6dd4f91df/split "HTTP/1.1 201 Created"
+[2026-04-21 12:07:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 2/7 done: split_id=a0b02d0d-0405-4899-bfbe-51ad387436b5 train=26029 holdout=6508
+[2026-04-21 12:07:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 3/7: starting synthesis job
+[2026-04-21 12:07:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: POST http://synthesis_service:8002/api/v1/jobs "HTTP/1.1 202 Accepted"
+[2026-04-21 12:07:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 3/7 done: job_id=a839891a-57e2-44d8-b88e-8f09e3c294f8
+[2026-04-21 12:07:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 4/7: waiting for synthesis (polling every 10s)...
+[2026-04-21 12:07:10] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:07:20] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:07:30] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:07:40] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:07:50] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:08:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:08:10] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:08:20] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:08:30] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:08:40] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:08:50] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:09:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:09:10] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:09:20] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:09:30] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:09:40] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:09:50] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:10:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/a839891a-57e2-44d8-b88e-8f09e3c294f8 "HTTP/1.1 200 OK"
+[2026-04-21 12:10:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 4/7 done: synth_path=synth/a839891a-57e2-44d8-b88e-8f09e3c294f8/synthetic_pending.csv
+[2026-04-21 12:10:00] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 5/7: privacy evaluation
+[2026-04-21 12:10:21] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: POST http://evaluation_service:8003/api/v1/evaluate/privacy "HTTP/1.1 200 OK"
+[2026-04-21 12:10:21] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 5/7 done
+[2026-04-21 12:10:21] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 6/7: utility evaluation
+[2026-04-21 12:10:23] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: POST http://evaluation_service:8003/api/v1/evaluate/utility "HTTP/1.1 200 OK"
+[2026-04-21 12:10:23] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 6/7 done
+[2026-04-21 12:10:23] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 7/7: building report
+[2026-04-21 12:10:23] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] httpx: HTTP Request: POST http://reporting_service:8004/api/v1/reports "HTTP/1.1 201 Created"
+[2026-04-21 12:10:23] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Step 7/7 done: verdict=FAIL report=/data/reports/adult_census_dpctgan_db__dpctgan__20260421_121023.json
+[2026-04-21 12:10:23] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Synth finalized: synth/a839891a-57e2-44d8-b88e-8f09e3c294f8/synthetic.csv
+[2026-04-21 12:10:23] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Exporting synthetic data to DB table 'adult_census_dpctgan_db'
+[2026-04-21 12:10:26] [run 85bc8815-40bc-4152-9680-3b16cf0bac1a] [INFO] api.routers.runs: Exported 26029 rows to DB table 'adult_census_dpctgan_db'
+[2026-04-21 12:21:17] [INFO] api.main: Gateway started (log_path=logs/app.log)
+[2026-04-21 13:34:09] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Pipeline started: dataset=/app/data/adult.csv config=/app/configs/adult_ctgan.yaml
+[2026-04-21 13:34:09] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 1/7: uploading dataset (source=csv)
+[2026-04-21 13:34:09] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: POST http://data_service:8001/api/v1/datasets "HTTP/1.1 201 Created"
+[2026-04-21 13:34:09] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 1/7 done: dataset_id=c52b7840-7f2a-4f91-b3e7-19d7c7b6fc5b rows=32561
+[2026-04-21 13:34:09] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 2/7: preprocessing + holdout split
+[2026-04-21 13:34:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: POST http://data_service:8001/api/v1/datasets/c52b7840-7f2a-4f91-b3e7-19d7c7b6fc5b/split "HTTP/1.1 201 Created"
+[2026-04-21 13:34:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 2/7 done: split_id=0f5eeccc-2cb8-4f3c-a8be-d8d3cb756470 train=26029 holdout=6508
+[2026-04-21 13:34:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 3/7: starting synthesis job
+[2026-04-21 13:34:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: POST http://synthesis_service:8002/api/v1/jobs "HTTP/1.1 202 Accepted"
+[2026-04-21 13:34:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 3/7 done: job_id=739b9753-ba9d-4235-a7a8-918460477a72
+[2026-04-21 13:34:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 4/7: waiting for synthesis (polling every 10s)...
+[2026-04-21 13:34:20] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:34:30] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:34:40] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:34:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:35:00] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:35:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:35:20] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:35:30] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:35:40] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:35:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:36:00] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:36:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:36:20] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:36:30] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:36:40] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:36:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:37:00] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:37:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:37:20] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:37:30] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:37:40] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:37:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:38:00] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:38:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:38:20] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:38:30] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:38:40] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:38:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:39:00] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:39:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:39:20] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:39:30] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:39:40] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:39:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:40:00] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:40:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:40:20] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:40:30] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:40:40] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:40:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/739b9753-ba9d-4235-a7a8-918460477a72 "HTTP/1.1 200 OK"
+[2026-04-21 13:40:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 4/7 done: synth_path=synth/739b9753-ba9d-4235-a7a8-918460477a72/synthetic_pending.csv
+[2026-04-21 13:40:50] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 5/7: privacy evaluation
+[2026-04-21 13:41:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: POST http://evaluation_service:8003/api/v1/evaluate/privacy "HTTP/1.1 200 OK"
+[2026-04-21 13:41:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 5/7 done
+[2026-04-21 13:41:10] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 6/7: utility evaluation
+[2026-04-21 13:41:12] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: POST http://evaluation_service:8003/api/v1/evaluate/utility "HTTP/1.1 200 OK"
+[2026-04-21 13:41:12] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 6/7 done
+[2026-04-21 13:41:12] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 7/7: building report
+[2026-04-21 13:41:12] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] httpx: HTTP Request: POST http://reporting_service:8004/api/v1/reports "HTTP/1.1 201 Created"
+[2026-04-21 13:41:12] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Step 7/7 done: verdict=PASS report=/data/reports/adult_census_ctgan__ctgan__20260421_134112.json
+[2026-04-21 13:41:12] [run 68fb71ff-10b8-40fb-a648-c5653674997f] [INFO] api.routers.runs: Synth finalized: synth/739b9753-ba9d-4235-a7a8-918460477a72/synthetic.csv
+[2026-04-21 14:49:13] [INFO] api.main: Gateway started (log_path=logs/app.log)
+[2026-04-21 14:57:42] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Pipeline started: dataset=/app/data/adult.csv config=/app/configs/adult_ctgan.yaml
+[2026-04-21 14:57:42] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 1/7: uploading dataset (source=csv)
+[2026-04-21 14:57:42] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: POST http://data_service:8001/api/v1/datasets "HTTP/1.1 201 Created"
+[2026-04-21 14:57:42] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 1/7 done: dataset_id=b642ef67-4a89-4a5b-8b1b-1fdedb9818ef rows=32561
+[2026-04-21 14:57:42] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 2/7: preprocessing + holdout split
+[2026-04-21 14:57:45] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: POST http://data_service:8001/api/v1/datasets/b642ef67-4a89-4a5b-8b1b-1fdedb9818ef/split "HTTP/1.1 201 Created"
+[2026-04-21 14:57:45] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 2/7 done: split_id=24b9c4e2-d283-4c81-ba47-fdfb29b75401 train=26029 holdout=6508
+[2026-04-21 14:57:45] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 3/7: starting synthesis job
+[2026-04-21 14:57:45] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: POST http://synthesis_service:8002/api/v1/jobs "HTTP/1.1 202 Accepted"
+[2026-04-21 14:57:45] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 3/7 done: job_id=ae444df4-7434-43fe-8890-f743e6cfd3f0
+[2026-04-21 14:57:45] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 4/7: waiting for synthesis (polling every 10s)...
+[2026-04-21 14:57:55] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:58:06] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:58:16] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:58:26] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:58:36] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:58:46] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:58:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:59:06] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:59:16] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:59:26] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:59:36] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:59:46] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 14:59:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:00:06] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:00:16] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:00:26] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:00:36] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:00:46] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:00:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:01:06] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:01:16] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:01:26] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:01:36] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:01:46] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:01:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:02:06] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:02:16] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:02:26] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:02:36] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:02:46] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:02:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:03:06] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:03:16] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:03:26] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:03:36] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:03:46] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:03:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:04:06] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:04:16] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:04:26] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:04:36] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:04:46] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:04:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: GET http://synthesis_service:8002/api/v1/jobs/ae444df4-7434-43fe-8890-f743e6cfd3f0 "HTTP/1.1 200 OK"
+[2026-04-21 15:04:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 4/7 done: synth_path=synth/ae444df4-7434-43fe-8890-f743e6cfd3f0/synthetic_pending.csv
+[2026-04-21 15:04:56] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 5/7: privacy evaluation
+[2026-04-21 15:05:17] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: POST http://evaluation_service:8003/api/v1/evaluate/privacy "HTTP/1.1 200 OK"
+[2026-04-21 15:05:17] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 5/7 done
+[2026-04-21 15:05:17] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 6/7: utility evaluation
+[2026-04-21 15:05:19] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: POST http://evaluation_service:8003/api/v1/evaluate/utility "HTTP/1.1 200 OK"
+[2026-04-21 15:05:19] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 6/7 done
+[2026-04-21 15:05:19] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 7/7: building report
+[2026-04-21 15:05:19] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] httpx: HTTP Request: POST http://reporting_service:8004/api/v1/reports "HTTP/1.1 201 Created"
+[2026-04-21 15:05:19] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Step 7/7 done: verdict=PASS report=/data/reports/adult_census_ctgan__ctgan__20260421_150519.json
+[2026-04-21 15:05:19] [run 21f856a0-e161-4642-975a-8e1a5d655c21] [INFO] api.routers.runs: Synth finalized: synth/ae444df4-7434-43fe-8890-f743e6cfd3f0/synthetic.csv

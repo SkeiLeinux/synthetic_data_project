@@ -1,0 +1,317 @@
+openapi: 3.1.0
+
+info:
+  title: Data Service
+  version: 1.0.0
+  description: |
+    Внутренний сервис: загрузка датасетов (CSV / PostgreSQL),
+    предобработка, минимизация, holdout split.
+
+    **Микросервис:** `data_service`.
+    **Порт:** `8001`.
+    **Базовый префикс:** `/api/v1` (кроме `/health`).
+    **Авторизация:** отсутствует (внутренняя сеть docker compose).
+
+    Артефакты записываются на разделяемый Docker volume `/data`:
+    `datasets/{dataset_id}/raw.csv`, `splits/{split_id}/{train,holdout}.csv`,
+    `splits/{split_id}/profile.json`, `splits/{split_id}/meta.json`.
+
+servers:
+  - url: http://localhost:8001
+    description: Локальный запуск
+  - url: http://data_service:8001
+    description: Внутри docker-сети
+
+tags:
+  - name: system
+    description: Healthcheck
+  - name: datasets
+    description: Загрузка / удаление / получение метаданных
+  - name: splits
+    description: Препроцессинг и holdout split
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Healthcheck
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /api/v1/datasets:
+    post:
+      tags: [datasets]
+      summary: Загрузить CSV-файл
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: "CSV-файл" }
+      responses:
+        "201":
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetMeta" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+
+  /api/v1/datasets/from-db:
+    post:
+      tags: [datasets]
+      summary: Импорт датасета из PostgreSQL
+      description: |
+        Подключается к БД по DSN (передаётся Gateway-ем из переменной
+        окружения, в YAML не хранится), выполняет SQL и сохраняет результат
+        на shared volume.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dsn, query]
+              properties:
+                dsn:   { type: string, example: "postgresql://user:pass@host:5432/db" }
+                query: { type: string, example: "SELECT * FROM customers LIMIT 10000" }
+                name:  { type: string, nullable: true, example: "customers_2026q1" }
+      responses:
+        "201":
+          description: Импортировано
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetMeta" }
+        "400":
+          description: Ошибка БД или пустой запрос
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/datasets/{dataset_id}:
+    parameters:
+      - { name: dataset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [datasets]
+      summary: Метаданные датасета
+      responses:
+        "200":
+          description: Метаданные
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetMeta" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/datasets/{dataset_id}/split:
+    parameters:
+      - { name: dataset_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [splits]
+      summary: Предобработка + holdout split
+      description: |
+        Выполняется атомарно:
+          1. (опц.) sampling до `sample_size` строк;
+          2. preprocessing — дубликаты, пропуски (median/mode);
+          3. minimization — удаление direct identifiers, опц. high-cardinality;
+          4. detect / override типы колонок;
+          5. stratified split по `target_column` если задан;
+          6. сохранение train.csv, holdout.csv, profile.json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SplitRequest" }
+            example:
+              holdout_size: 0.2
+              random_state: 42
+              sample_size: 0
+              target_column: income
+              force_categorical: [income]
+              direct_identifiers: []
+              drop_high_cardinality: false
+              cardinality_threshold: 0.9
+              run_id: "f6c1b2c0-1234-4abc-8def-123456789abc"
+      responses:
+        "201":
+          description: Сплит создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SplitMeta" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/datasets/{dataset_id}/splits/{split_id}:
+    parameters:
+      - { name: dataset_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: split_id,   in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [splits]
+      summary: Метаданные сплита
+      responses:
+        "200":
+          description: Метаданные
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SplitMeta" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/datasets/{dataset_id}/splits/{split_id}/profile:
+    parameters:
+      - { name: dataset_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: split_id,   in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [splits]
+      summary: Профиль предобработанного датасета
+      description: Summary-статистики по каждой колонке (тип, null_pct, min/max/mean/median/std или top values).
+      responses:
+        "200":
+          description: profile.json
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SplitProfile" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/datasets/{dataset_id}/splits/{split_id}/train:
+    parameters:
+      - { name: dataset_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: split_id,   in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [splits]
+      summary: Скачать train.csv
+      responses:
+        "200":
+          description: train.csv
+          content:
+            text/csv:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/datasets/{dataset_id}/splits/{split_id}/holdout:
+    parameters:
+      - { name: dataset_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: split_id,   in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [splits]
+      summary: Скачать holdout.csv
+      responses:
+        "200":
+          description: holdout.csv
+          content:
+            text/csv:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  responses:
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: NOT_FOUND
+            message: "Датасет не найден"
+    ValidationError:
+      description: Невалидный запрос
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: VALIDATION_ERROR
+            message: "Файл пуст"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string }
+        message: { type: string }
+
+    DatasetMeta:
+      type: object
+      required: [dataset_id, filename, rows, columns, file_size_bytes, uploaded_at]
+      properties:
+        dataset_id:      { type: string, format: uuid }
+        filename:        { type: string }
+        rows:            { type: integer }
+        columns:         { type: integer }
+        file_size_bytes: { type: integer }
+        uploaded_at:     { type: string, format: date-time }
+
+    SplitRequest:
+      type: object
+      properties:
+        holdout_size:
+          type: number
+          format: float
+          minimum: 0.05
+          maximum: 0.5
+          default: 0.2
+        random_state:          { type: integer, default: 42 }
+        sample_size:           { type: integer, minimum: 0, default: 0, description: "0 = все строки" }
+        na_values:             { type: array, items: { type: string }, default: ["?"] }
+        exclude_columns:       { type: array, items: { type: string } }
+        force_categorical:     { type: array, items: { type: string } }
+        force_continuous:      { type: array, items: { type: string } }
+        target_column:         { type: string, nullable: true }
+        direct_identifiers:    { type: array, items: { type: string }, description: "Удаляются до синтеза" }
+        drop_high_cardinality: { type: boolean, default: false }
+        cardinality_threshold: { type: number, format: float, default: 0.9 }
+        run_id:                { type: string, format: uuid, nullable: true }
+
+    SplitMeta:
+      type: object
+      required: [split_id, dataset_id, train_rows, holdout_rows, train_path, holdout_path, categorical_columns, continuous_columns, created_at]
+      properties:
+        split_id:            { type: string, format: uuid }
+        dataset_id:          { type: string, format: uuid }
+        train_rows:          { type: integer }
+        holdout_rows:        { type: integer }
+        train_path:          { type: string, example: "splits/{split_id}/train.csv" }
+        holdout_path:        { type: string, example: "splits/{split_id}/holdout.csv" }
+        categorical_columns: { type: array, items: { type: string } }
+        continuous_columns:  { type: array, items: { type: string } }
+        target_column:       { type: string, nullable: true }
+        minimization_report:
+          type: object
+          nullable: true
+          properties:
+            removed_direct_identifiers: { type: array, items: { type: string } }
+            removed_high_cardinality:   { type: array, items: { type: string } }
+            columns_before:             { type: integer }
+            columns_after:              { type: integer }
+            rows_unchanged:             { type: boolean }
+        profile_path: { type: string, nullable: true, example: "splits/{split_id}/profile.json" }
+        created_at:   { type: string, format: date-time }
+
+    SplitProfile:
+      type: object
+      properties:
+        total_rows:          { type: integer }
+        total_columns:       { type: integer }
+        categorical_columns: { type: array, items: { type: string } }
+        continuous_columns:  { type: array, items: { type: string } }
+        columns:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              type:       { type: string, enum: [continuous, categorical] }
+              null_count: { type: integer }
+              null_pct:   { type: number }
+              min:        { type: number }
+              max:        { type: number }
+              mean:       { type: number }
+              median:     { type: number }
+              std:        { type: number }
+              n_unique:   { type: integer }
+              top_values: { type: object, additionalProperties: { type: integer } }

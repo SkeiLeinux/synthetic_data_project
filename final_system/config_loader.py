@@ -23,68 +23,105 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-# ── Импорты dataclass-конфигов из модулей ─────────────────────────────────────
-# Загружаем оригинальные dataclass'ы, чтобы config_loader возвращал
-# именно те объекты, которые ожидают synthesizer, evaluator, reporter.
-from synthesizer.dp_ctgan import DPCTGANConfig
-from synthesizer.dp_tvae import DPTVAEConfig
-from synthesizer.sdv_generators import CTGANConfig, TVAEConfig, CopulaGANConfig
-from evaluator.privacy.privacy_evaluator import PrivacyConfig
-from evaluator.utility.utility_evaluator import UtilityConfig
-from reporter.reporter import VerdictThresholds
-
-# Тип конфига генератора (union всех вариантов)
-GeneratorConfig = DPCTGANConfig | DPTVAEConfig | CTGANConfig | TVAEConfig | CopulaGANConfig
+# config_loader — чистый YAML-парсер без зависимостей на ML-библиотеки.
+#
+# Импорты synthesizer / evaluator / reporter намеренно вынесены ВНУТРЬ методов
+# (lazy imports), чтобы:
+#   1. Gateway мог импортировать config_loader не имея torch/opacus/smartnoise.
+#   2. Добавление нового генератора не требовало перебилда Gateway —
+#      достаточно изменить только synthesis_service.
+#
+# Схема зависимостей:
+#   config_loader  ← (импортирует) ← Gateway, synthesis_service, CLI, pipeline
+#   synthesizer/*  ← (импортирует) ← synthesis_service, pipeline (monolith)
+#
+# При добавлении нового генератора:
+#   1. Создать synthesizer/my_generator.py
+#   2. Добавить ветку в synthesis_service/router.py → _build_generator()
+#   3. Для monolith/CLI: добавить to_mygenerator_config() с lazy-импортом ниже
+#      и ветку в pipeline.py → build_generator()
+#   Шаги 1–2 не требуют пересборки Gateway.
 
 
 # ==============================================================================
 # Pydantic-схемы для валидации YAML
 # ==============================================================================
 
-class DBConfig(BaseModel):
-    """Параметры подключения к PostgreSQL."""
-    host: str = "localhost"
-    port: int = 5432
-    dbname: str
-    user: str
-    password: str
-    schema_name: str = Field("public", alias="schema")
+class DataImportConfig(BaseModel):
+    """Источник входных данных для пайплайна."""
+    type: str = "csv"               # csv | postgres
+    path: str = ""                  # путь к CSV (для type: csv)
+    dsn_env: Optional[str] = None   # имя env-переменной с DSN (для type: postgres)
+    query: Optional[str] = None     # SQL-запрос (для type: postgres)
 
-    model_config = {"populate_by_name": True}
+    @field_validator("type")
+    @classmethod
+    def check_type(cls, v: str) -> str:
+        if v not in ("csv", "postgres"):
+            raise ValueError(f"data_import.type должен быть csv или postgres, получено: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def check_params(self) -> "DataImportConfig":
+        if self.type == "csv" and not self.path:
+            raise ValueError("data_import.path обязателен при type: csv")
+        if self.type == "postgres":
+            if not self.dsn_env:
+                raise ValueError("data_import.dsn_env обязателен при type: postgres")
+            if not self.query:
+                raise ValueError("data_import.query обязателен при type: postgres")
+        return self
+
+
+class DataExportConfig(BaseModel):
+    """Назначение для синтетических данных после пайплайна."""
+    type: str = "none"              # none | csv | postgres
+    dsn_env: Optional[str] = None   # имя env-переменной с DSN (для type: postgres)
+    table: Optional[str] = None     # целевая таблица (для type: postgres)
+    if_exists: str = "replace"      # replace | append | fail
+
+    @field_validator("type")
+    @classmethod
+    def check_type(cls, v: str) -> str:
+        if v not in ("none", "csv", "postgres"):
+            raise ValueError(f"data_export.type должен быть none, csv или postgres, получено: {v!r}")
+        return v
+
+    @field_validator("if_exists")
+    @classmethod
+    def check_if_exists(cls, v: str) -> str:
+        if v not in ("replace", "append", "fail"):
+            raise ValueError(f"data_export.if_exists должен быть replace, append или fail, получено: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def check_params(self) -> "DataExportConfig":
+        if self.type == "postgres":
+            if not self.dsn_env:
+                raise ValueError("data_export.dsn_env обязателен при type: postgres")
+            if not self.table:
+                raise ValueError("data_export.table обязателен при type: postgres")
+        return self
 
 
 class PathsConfig(BaseModel):
     logs: str = "logs/app.log"
-    output_dir: str = "reporter/reports"
+    output_dir: str = "../archive/reporter/reports"
 
 
 class PipelineConfig(BaseModel):
     dataset_name: str = "dataset"
-
-    # Источник данных: csv | db
-    data_source: str = "csv"
-    data_path: str = ""           # путь к CSV; нужен если data_source = csv
-    db_query: Optional[str] = None  # SQL-запрос; нужен если data_source = db
-
     sample_size: int = 0          # 0 = все строки
     n_synth_rows: int = 0         # 0 = совпадает с размером train
     run_preprocessing: bool = True
     holdout_size: float = 0.2
     random_state: int = 42
-
-    @field_validator("data_source")
-    @classmethod
-    def check_data_source(cls, v: str) -> str:
-        if v not in ("csv", "db"):
-            raise ValueError(
-                f"data_source должен быть csv или db, получено: {v!r}"
-            )
-        return v
+    max_iterations: int = 1       # максимум повторных обучений при вердикте FAIL
 
     @field_validator("holdout_size")
     @classmethod
@@ -94,14 +131,6 @@ class PipelineConfig(BaseModel):
                 f"holdout_size должен быть в (0, 1), получено: {v}"
             )
         return v
-
-    @model_validator(mode="after")
-    def check_source_params(self) -> "PipelineConfig":
-        if self.data_source == "csv" and not self.data_path:
-            raise ValueError("data_path обязателен при data_source: csv")
-        if self.data_source == "db" and not self.db_query:
-            raise ValueError("db_query обязателен при data_source: db")
-        return self
 
 
 _DP_GENERATOR_TYPES = {"dpctgan", "dptvae"}
@@ -168,12 +197,12 @@ class GeneratorYamlConfig(BaseModel):
     @field_validator("generator_type")
     @classmethod
     def check_generator_type(cls, v: str) -> str:
-        if v not in _ALL_GENERATOR_TYPES:
-            raise ValueError(
-                f"generator_type должен быть одним из {sorted(_ALL_GENERATOR_TYPES)}, "
-                f"получено: {v!r}"
-            )
-        return v
+        # Мягкая проверка: тип должен быть непустой строкой.
+        # Жёсткую валидацию против списка делает synthesis_service/_build_generator(),
+        # чтобы добавление нового генератора не требовало изменений в config_loader.
+        if not v or not v.strip():
+            raise ValueError("generator_type не может быть пустым")
+        return v.strip()
 
     @field_validator("epsilon")
     @classmethod
@@ -192,7 +221,8 @@ class GeneratorYamlConfig(BaseModel):
                 )
         return self
 
-    def to_dpctgan_config(self) -> DPCTGANConfig:
+    def to_dpctgan_config(self) -> Any:
+        from synthesizer.dp_ctgan import DPCTGANConfig
         return DPCTGANConfig(
             epsilon=self.epsilon,
             preprocessor_eps=self.preprocessor_eps,
@@ -218,7 +248,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_dptvae_config(self) -> DPTVAEConfig:
+    def to_dptvae_config(self) -> Any:
+        from synthesizer.dp_tvae import DPTVAEConfig
         return DPTVAEConfig(
             sigma=self.sigma,
             delta=self.delta,
@@ -234,7 +265,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_ctgan_config(self) -> CTGANConfig:
+    def to_ctgan_config(self) -> Any:
+        from synthesizer.sdv_generators import CTGANConfig
         return CTGANConfig(
             epochs=self.epochs,
             batch_size=self.batch_size,
@@ -253,7 +285,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_tvae_config(self) -> TVAEConfig:
+    def to_tvae_config(self) -> Any:
+        from synthesizer.sdv_generators import TVAEConfig
         return TVAEConfig(
             epochs=self.epochs,
             batch_size=self.batch_size,
@@ -267,7 +300,8 @@ class GeneratorYamlConfig(BaseModel):
             random_seed=self.random_seed,
         )
 
-    def to_copulagan_config(self) -> CopulaGANConfig:
+    def to_copulagan_config(self) -> Any:
+        from synthesizer.sdv_generators import CopulaGANConfig
         return CopulaGANConfig(
             epochs=self.epochs,
             batch_size=self.batch_size,
@@ -303,7 +337,8 @@ class UtilityYamlConfig(BaseModel):
             )
         return v
 
-    def to_utility_config(self) -> UtilityConfig:
+    def to_utility_config(self) -> Any:
+        from evaluator.utility.utility_evaluator import UtilityConfig
         return UtilityConfig(
             target_column=self.target_column,
             task_type=self.task_type,  # type: ignore[arg-type]
@@ -322,7 +357,8 @@ class PrivacyYamlConfig(BaseModel):
     distance_sample_size: int = 2000
     mia_sample_size: int = 1000
 
-    def to_privacy_config(self) -> PrivacyConfig:
+    def to_privacy_config(self) -> Any:
+        from evaluator.privacy.privacy_evaluator import PrivacyConfig
         return PrivacyConfig(
             quasi_identifiers=self.quasi_identifiers,
             sensitive_attribute=self.sensitive_attribute,
@@ -342,7 +378,8 @@ class ThresholdsYamlConfig(BaseModel):
     require_dp_enabled: bool = True
     max_spent_epsilon: Optional[float] = None
 
-    def to_verdict_thresholds(self) -> VerdictThresholds:
+    def to_verdict_thresholds(self) -> Any:
+        from services.reporting_service.reporter import VerdictThresholds
         return VerdictThresholds(
             max_utility_loss=self.max_utility_loss,
             max_mean_jsd=self.max_mean_jsd,
@@ -388,9 +425,8 @@ class AppConfig(BaseModel):
     готовые к использованию объекты для run_pipeline().
     """
     paths: PathsConfig = Field(default_factory=PathsConfig)
-    database: Optional[DBConfig] = None
-    data_source: Optional[DBConfig] = None
-    data_target: Optional[DBConfig] = None
+    data_import: DataImportConfig = Field(default_factory=lambda: DataImportConfig(type="csv", path=""))
+    data_export: DataExportConfig = Field(default_factory=lambda: DataExportConfig(type="none"))
     pipeline: PipelineConfig
     generator: GeneratorYamlConfig = Field(default_factory=GeneratorYamlConfig)
     utility: UtilityYamlConfig
@@ -404,10 +440,10 @@ class AppConfig(BaseModel):
         """Возвращает тип генератора из конфига."""
         return self.generator.generator_type
 
-    def get_generator_config(self) -> "GeneratorConfig":
-        """
-        Возвращает конфиг в типе, соответствующем generator_type.
-        pipeline.py использует его через build_generator().
+    def get_generator_config(self) -> Any:
+        """Возвращает конфиг генератора. Используется только в monolith/CLI режиме.
+        Lazy-импорты внутри to_*_config() гарантируют, что synthesizer
+        не загружается при импорте config_loader в Gateway.
         """
         t = self.generator.generator_type
         if t == "dpctgan":
@@ -423,13 +459,13 @@ class AppConfig(BaseModel):
         else:
             raise ValueError(f"Неизвестный generator_type: {t!r}")
 
-    def get_privacy_config(self) -> PrivacyConfig:
+    def get_privacy_config(self) -> Any:
         return self.privacy.to_privacy_config()
 
-    def get_utility_config(self) -> UtilityConfig:
+    def get_utility_config(self) -> Any:
         return self.utility.to_utility_config()
 
-    def get_thresholds(self) -> VerdictThresholds:
+    def get_thresholds(self) -> Any:
         return self.thresholds.to_verdict_thresholds()
 
     def get_n_synth_rows(self, n_train_rows: int) -> int:
@@ -586,10 +622,10 @@ if __name__ == "__main__":
     print("\n=== DATA SCHEMA ===")
     s = cfg.data_schema
     if s.is_auto:
-        print("  → Автодетекция (categorical/continuous не заданы)")
+        print("  -> Автодетекция (categorical/continuous не заданы)")
     else:
         print(f"  categorical: {s.categorical}")
         print(f"  continuous:  {s.continuous}")
         print(f"  exclude:     {s.exclude}")
 
-    print("\n✓ Конфиг загружен успешно")
+    print("\n[OK] Конфиг загружен успешно")

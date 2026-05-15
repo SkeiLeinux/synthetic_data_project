@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pandas as pd
 import pytest
 
-from data_service.processor import DataProcessor
+from data_processor.processor import DataProcessor
 
 
 # ─────────────────────────────────────────────

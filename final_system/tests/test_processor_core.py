@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from data_service.processor import DataProcessor, DataSchema
+from data_processor.processor import DataProcessor, DataSchema
 
 
 # ─────────────────────────────────────────────

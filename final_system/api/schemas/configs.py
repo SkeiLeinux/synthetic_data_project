@@ -7,11 +7,12 @@ from pydantic import BaseModel
 
 
 class ConfigSummary(BaseModel):
-    name:         str
-    created_at:   datetime
-    updated_at:   datetime
-    epsilon:      Optional[float]
-    epochs:       Optional[int]
+    name:           str
+    created_at:     datetime
+    updated_at:     datetime
+    generator_type: Optional[str]
+    epsilon:        Optional[float]
+    epochs:         Optional[int]
 
 
 class ConfigValidationResult(BaseModel):

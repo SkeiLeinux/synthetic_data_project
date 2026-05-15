@@ -1,0 +1,122 @@
+# ==============================================================================
+# Конфигурация: DP-CTGAN — импорт из PostgreSQL, экспорт синтетики в PostgreSQL
+# Датасет: Adult Census Income (таблица raw_data.public.adult)
+#
+# Источник:  user_db:5432/raw_data  → таблица adult
+# Экспорт:   user_db:5432/synth_data → таблица adult_census_dpctgan_db (создаётся автоматически)
+#
+# Переменные окружения (задаются в .env):
+#   DB_IMPORT_DSN=postgresql://user:user@user_db:5432/raw_data
+#   DB_EXPORT_DSN=postgresql://user:user@user_db:5432/synth_data
+# ==============================================================================
+
+# ── Пути ──────────────────────────────────────────────────────────────────────
+paths:
+  logs: logs/app.log
+  output_dir: reporter/reports
+
+# ── Источник входных данных ───────────────────────────────────────────────────
+data_import:
+  type: postgres
+  dsn_env: DB_IMPORT_DSN                  # env-переменная с DSN подключения
+  query: "SELECT * FROM adult"            # таблица adult в схеме public
+
+# ── Назначение синтетических данных ──────────────────────────────────────────
+data_export:
+  type: postgres
+  dsn_env: DB_EXPORT_DSN                  # env-переменная с DSN подключения
+  table: adult_census_dpctgan_db          # таблица создаётся автоматически
+  if_exists: replace                      # replace | append | fail
+
+# ── Параметры пайплайна ───────────────────────────────────────────────────────
+pipeline:
+  dataset_name: adult_census_dpctgan_db
+  sample_size: 0
+  n_synth_rows: 0
+  run_preprocessing: true
+  holdout_size: 0.2
+  random_state: 42
+  max_iterations: 1
+
+# ── Генератор ─────────────────────────────────────────────────────────────────
+generator:
+  generator_type: dpctgan
+  epsilon: 3.0
+  preprocessor_eps: 0.5
+  delta: null
+  sigma: 5.0
+  max_per_sample_grad_norm: 1.0
+  epochs: 300
+  batch_size: 500
+  discriminator_steps: 1
+  pac: 1
+  embedding_dim: 128
+  generator_dim: [256, 256]
+  discriminator_dim: [256, 256]
+  generator_lr: 0.0002
+  generator_decay: 0.000001
+  discriminator_lr: 0.0002
+  discriminator_decay: 0.000001
+  cuda: true
+  verbose: true
+  disabled_dp: false
+  loss: cross_entropy
+  nullable: false
+  random_seed: 42
+
+# ── Оценка полезности ─────────────────────────────────────────────────────────
+utility:
+  target_column: income
+  task_type: classification
+  drop_columns:
+    - fnlwgt
+  n_estimators: 100
+  random_state: 42
+
+# ── Оценка приватности ────────────────────────────────────────────────────────
+privacy:
+  quasi_identifiers:
+    - age
+    - education
+    - occupation
+    - sex
+    - race
+  sensitive_attribute: income
+  compute_classical: true
+  compute_distance: true
+  compute_mia: true
+  distance_sample_size: 2000
+  mia_sample_size: 1000
+
+# ── Пороговые значения вердикта ───────────────────────────────────────────────
+thresholds:
+  max_utility_loss: 0.15
+  max_mean_jsd: 0.20
+  max_mia_auc: 0.55
+  require_dcr_privacy_preserved: true
+  require_dp_enabled: true
+  max_spent_epsilon: 5.0
+
+# ── Схема данных ──────────────────────────────────────────────────────────────
+data_schema:
+  categorical:
+    - workclass
+    - education
+    - marital-status
+    - occupation
+    - relationship
+    - race
+    - sex
+    - native-country
+    - income
+  continuous:
+    - age
+    - education-num
+    - capital-gain
+    - capital-loss
+    - hours-per-week
+  exclude:
+    - fnlwgt
+  direct_identifiers: []
+  drop_high_cardinality: false
+  cardinality_threshold: 0.9

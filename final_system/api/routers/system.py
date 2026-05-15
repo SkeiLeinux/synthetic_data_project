@@ -27,21 +27,37 @@ def health_check() -> Dict[str, Any]:
 
 @router.get("/health/db")
 def health_db() -> Dict[str, Any]:
-    """Readiness check — PostgreSQL."""
+    """Readiness check — PostgreSQL.
+
+    Использует те же параметры подключения что и вся система (из Settings /
+    переменных окружения), а не YAML-конфиг — иначе в Docker host=localhost
+    вместо host=postgres.
+    """
+    from api.settings import get_settings
+    settings = get_settings()
+
+    if settings.db_disabled:
+        return {"component": "database", "status": "disabled",
+                "message": "DB_DISABLED=true — PostgreSQL не используется"}
+
     try:
-        from registry.process_registry import ProcessRegistry
-        from api.settings import get_settings
-        settings = get_settings()
-        from config_loader import load_config
-        cfg = load_config(str(settings.base_dir / settings.default_config))
-        reg = ProcessRegistry(app_config=cfg)
-        ok = reg.test_connection()
-        reg.close()
-        if ok:
-            return {"component": "database", "status": "ok", "latency_ms": None, "message": None}
-        return {"component": "database", "status": "unavailable", "latency_ms": None, "message": "test_connection failed"}
+        import time as _time
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(
+            f"postgresql+psycopg2://{settings.db_user}:{settings.db_password}"
+            f"@{settings.db_host}:{settings.db_port}/{settings.db_name}",
+            pool_pre_ping=True,
+        )
+        t0 = _time.monotonic()
+        with engine.connect() as conn:
+            conn.execute(sa_text("SELECT 1"))
+        latency_ms = round((_time.monotonic() - t0) * 1000, 1)
+        engine.dispose()
+        return {"component": "database", "status": "ok",
+                "latency_ms": latency_ms, "message": None}
     except Exception as e:
-        return {"component": "database", "status": "unavailable", "latency_ms": None, "message": str(e)}
+        return {"component": "database", "status": "unavailable",
+                "latency_ms": None, "message": str(e)}
 
 
 @router.get("/health/gpu")

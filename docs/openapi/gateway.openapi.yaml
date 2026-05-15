@@ -1,0 +1,789 @@
+openapi: 3.1.0
+
+info:
+  title: Synthetic Data Generation Service — Gateway
+  version: 1.0.0
+  description: |
+    Публичный REST API оркестратора пайплайна генерации синтетических табличных
+    данных с дифференциальной приватностью.
+
+    **Микросервис:** `app` (Gateway).
+    **Порт:** `8000`.
+    **Базовый префикс:** `/api/v1` (все ручки, кроме `/` редиректа).
+    **Авторизация:** Bearer-токен (`Authorization: Bearer <API_KEY>`).
+    Если переменная окружения `API_KEY` не задана — авторизация отключена
+    (режим разработки).
+
+    Схемы запросов/ответов — Pydantic v2.
+  contact:
+    name: Synthetic Data Platform
+  license:
+    name: Internal
+
+servers:
+  - url: http://localhost:8000
+    description: Локальный запуск через docker compose
+  - url: http://app:8000
+    description: Внутри docker-сети (имя сервиса = app)
+
+tags:
+  - name: system
+    description: Системные ручки (health, metrics) — без авторизации
+  - name: runs
+    description: Управление запусками пайплайна
+  - name: datasets
+    description: Загруженные CSV-датасеты
+  - name: models
+    description: Сохранённые обученные генераторы
+  - name: configs
+    description: YAML-конфиги пайплайна
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ── System ──────────────────────────────────────────────────────────────────
+  /api/v1/health:
+    get:
+      tags: [system]
+      security: []
+      summary: Liveness probe
+      description: Проверка живости Gateway. Не требует авторизации.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:    { type: string, example: ok }
+                  version:   { type: string, example: 1.0.0 }
+                  uptime_sec: { type: integer, example: 3600 }
+
+  /api/v1/health/db:
+    get:
+      tags: [system]
+      security: []
+      summary: Readiness — PostgreSQL
+      description: Проверяет соединение с системной БД (ProcessRegistry).
+      responses:
+        "200":
+          description: Статус БД
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  component:  { type: string, example: database }
+                  status:     { type: string, enum: [ok, unavailable, disabled] }
+                  latency_ms: { type: number, nullable: true, example: 1.2 }
+                  message:    { type: string, nullable: true }
+
+  /api/v1/health/gpu:
+    get:
+      tags: [system]
+      security: []
+      summary: Readiness — CUDA GPU
+      description: Возвращает свободную VRAM и имя GPU-устройства.
+      responses:
+        "200":
+          description: Статус GPU
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  component:     { type: string, example: gpu }
+                  status:        { type: string, enum: [ok, unavailable] }
+                  device_name:   { type: string, nullable: true, example: "Tesla T4" }
+                  vram_total_mb: { type: integer, nullable: true }
+                  vram_free_mb:  { type: integer, nullable: true }
+
+  /api/v1/metrics:
+    get:
+      tags: [system]
+      security: []
+      summary: Метрики в формате Prometheus
+      description: |
+        Текстовый формат Prometheus exposition. Содержит:
+          * `synth_runs_total{status,verdict}` — счётчик прогонов;
+          * `synth_queue_size{state}` — длина очереди (queued/running);
+          * `synth_run_duration_seconds_avg` — средняя длительность.
+      responses:
+        "200":
+          description: Метрики
+          content:
+            text/plain:
+              schema: { type: string }
+
+  # ── Runs ─────────────────────────────────────────────────────────────────────
+  /api/v1/runs:
+    get:
+      tags: [runs]
+      summary: Список запусков (Redis + PostgreSQL)
+      description: |
+        Возвращает все запуски: активные из Redis (TTL 1 час) +
+        историю из таблицы `processes` PostgreSQL.
+      parameters:
+        - { name: page,         in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: per_page,     in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: status,       in: query, schema: { $ref: "#/components/schemas/RunStatus" } }
+        - { name: verdict,      in: query, schema: { type: string, enum: [PASS, FAIL, PARTIAL] } }
+        - { name: dataset_name, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Список запусков
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunListResponse" }
+
+    post:
+      tags: [runs]
+      summary: Запустить пайплайн
+      description: |
+        Создаёт новый запуск пайплайна и возвращает 202 + `RunSummary`.
+        Пайплайн выполняется асинхронно через FastAPI BackgroundTasks.
+        Опрашивайте статус через `GET /runs/{run_id}` (поллинг)
+        или подпишитесь на webhook.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunCreate" }
+            example:
+              config_name: adult
+              save_model: true
+              quick_test: false
+              webhook_url: https://my-app.example.com/dp-synth/done
+              n_synth_rows: 50000
+      responses:
+        "202":
+          description: Запуск принят
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/runs/active:
+    get:
+      tags: [runs]
+      summary: Только активные запуски (Redis)
+      description: Подмножество `/runs` без обращения к PostgreSQL — быстрее.
+      parameters:
+        - { name: page,         in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: per_page,     in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: status,       in: query, schema: { $ref: "#/components/schemas/RunStatus" } }
+        - { name: verdict,      in: query, schema: { type: string, enum: [PASS, FAIL, PARTIAL] } }
+        - { name: dataset_name, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Список активных запусков
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunListResponse" }
+
+  /api/v1/runs/{run_id}:
+    parameters:
+      - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [runs]
+      summary: Детали запуска
+      responses:
+        "200":
+          description: Деталь
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    delete:
+      tags: [runs]
+      summary: Отменить или удалить запуск
+      description: |
+        * Если запуск `queued`/`running` — отправляет cancel в Synthesis Service
+          и помечает run как `cancelled`.
+        * Если запуск `completed`/`failed`/`cancelled` — удаляет запись.
+      responses:
+        "204": { description: Удалено / отменено }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/runs/{run_id}/report:
+    parameters:
+      - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [runs]
+      summary: JSON-отчёт по запуску
+      responses:
+        "200":
+          description: Отчёт
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Report" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RunNotFinished" }
+
+  /api/v1/runs/{run_id}/synthetic:
+    parameters:
+      - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [runs]
+      summary: Скачать сгенерированные данные
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [csv, json], default: csv }
+      responses:
+        "200":
+          description: Синтетика
+          content:
+            text/csv:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RunNotFinished" }
+
+    post:
+      tags: [runs]
+      summary: Догенерация дополнительных строк
+      description: |
+        Использует сохранённую модель запуска для генерации `n_rows`
+        дополнительных строк. Требует `save_model=true` при создании запуска.
+        DP-бюджет не расходуется.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [n_rows]
+              properties:
+                n_rows: { type: integer, minimum: 1, example: 10000 }
+      responses:
+        "200":
+          description: CSV
+          content:
+            text/csv:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Модель не сохранена
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                code: MODEL_NOT_SAVED
+                message: "Модель не сохранена. Повторите запуск с save_model: true"
+
+  /api/v1/runs/{run_id}/logs:
+    parameters:
+      - { name: run_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [runs]
+      summary: Логи по run_id
+      description: |
+        Объединяет лог-файлы Gateway и всех 4 микросервисов, фильтрует
+        по `run_id`, сортирует по timestamp. Трейсбеки прикрепляются к
+        предыдущей строке-с-run_id.
+      parameters:
+        - name: tail
+          in: query
+          description: Только последние N строк
+          schema: { type: integer, minimum: 1, maximum: 10000 }
+      responses:
+        "200":
+          description: Текстовый лог
+          content:
+            text/plain:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ── Datasets ────────────────────────────────────────────────────────────────
+  /api/v1/datasets:
+    get:
+      tags: [datasets]
+      summary: Список загруженных датасетов
+      parameters:
+        - { name: page,     in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Список
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/DatasetSummary" } }
+                  meta:  { $ref: "#/components/schemas/PageMeta" }
+
+    post:
+      tags: [datasets]
+      summary: Загрузить CSV-файл
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, file]
+              properties:
+                name:      { type: string, example: my_dataset }
+                file:      { type: string, format: binary }
+                na_values: { type: string, example: "?,N/A" }
+      responses:
+        "201":
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetSummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409":
+          description: Датасет с таким именем уже существует
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/datasets/{name}:
+    parameters:
+      - { name: name, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [datasets]
+      summary: Удалить датасет
+      responses:
+        "204": { description: Удалено }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/datasets/{name}/schema:
+    parameters:
+      - { name: name, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [datasets]
+      summary: Автодетекция схемы датасета
+      responses:
+        "200":
+          description: Схема
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetSchema" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/datasets/{name}/preview:
+    parameters:
+      - { name: name, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [datasets]
+      summary: Превью первых N строк + summary stats
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                n_rows: { type: integer, minimum: 1, maximum: 1000, default: 10 }
+      responses:
+        "200":
+          description: Превью
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetPreview" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ── Models ──────────────────────────────────────────────────────────────────
+  /api/v1/models:
+    get:
+      tags: [models]
+      summary: Список сохранённых моделей
+      parameters:
+        - { name: page,     in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Список
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ModelSummary" } }
+                  meta:  { $ref: "#/components/schemas/PageMeta" }
+
+  /api/v1/models/{model_id}:
+    parameters:
+      - { name: model_id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [models]
+      summary: Детали модели
+      responses:
+        "200":
+          description: Деталь
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [models]
+      summary: Удалить модель
+      responses:
+        "204": { description: Удалено }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/models/{model_id}/samples:
+    parameters:
+      - { name: model_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [models]
+      summary: Сэмплирование из сохранённой модели
+      description: DP-бюджет не расходуется (post-processing immunity).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SampleRequest" }
+      responses:
+        "200":
+          description: Синтетика
+          content:
+            text/csv:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ── Configs ─────────────────────────────────────────────────────────────────
+  /api/v1/configs:
+    get:
+      tags: [configs]
+      summary: Список конфигов
+      parameters:
+        - { name: page,     in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Список
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/ConfigSummary" } }
+                  meta:  { $ref: "#/components/schemas/PageMeta" }
+    post:
+      tags: [configs]
+      summary: Загрузить YAML-конфиг
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, file]
+              properties:
+                name: { type: string, example: my_config }
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigSummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409":
+          description: Конфликт — конфиг уже существует
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/configs/validate:
+    post:
+      tags: [configs]
+      summary: Валидация YAML без сохранения
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Результат валидации
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigValidationResult" }
+
+  /api/v1/configs/{name}:
+    parameters:
+      - { name: name, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [configs]
+      summary: Получить конфиг
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [yaml, json], default: yaml }
+      responses:
+        "200":
+          description: Конфиг
+          content:
+            application/x-yaml:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [configs]
+      summary: Заменить конфиг
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Обновлено
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConfigSummary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [configs]
+      summary: Удалить конфиг
+      responses:
+        "204": { description: Удалено }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+# ────────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API_KEY
+      description: |
+        Передайте `Authorization: Bearer <API_KEY>` в каждом защищённом запросе.
+        Если переменная `API_KEY` не задана на сервере — авторизация отключена.
+
+  responses:
+    Unauthorized:
+      description: Нет/невалидный токен
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: UNAUTHORIZED
+            message: "Невалидный или отсутствующий Bearer-токен"
+
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: NOT_FOUND
+            message: "Запуск 'xxx' не найден"
+
+    ValidationError:
+      description: Невалидный запрос
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: VALIDATION_ERROR
+            message: "n_synth_rows должен быть > 0"
+
+    RunNotFinished:
+      description: Ресурс недоступен — запуск не завершён
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            code: RUN_NOT_FINISHED
+            message: "status: running"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string }
+        message: { type: string }
+
+    PageMeta:
+      type: object
+      properties:
+        total:    { type: integer }
+        page:     { type: integer }
+        per_page: { type: integer }
+        pages:    { type: integer }
+
+    RunStatus:
+      type: string
+      enum: [queued, running, completed, failed, cancelled]
+
+    Verdict:
+      type: string
+      enum: [PASS, FAIL, PARTIAL]
+
+    RunCreate:
+      type: object
+      required: [config_name]
+      properties:
+        config_name:  { type: string, example: adult }
+        save_model:   { type: boolean, default: false }
+        quick_test:   { type: boolean, default: false, description: "Сокращённый smoke-test (≈ 5 минут)" }
+        webhook_url:  { type: string, format: uri, nullable: true }
+        n_synth_rows: { type: integer, minimum: 1, nullable: true }
+
+    RunSummary:
+      type: object
+      required: [run_id, status, dataset_name, config_name, created_at]
+      properties:
+        run_id:        { type: string, format: uuid }
+        status:        { $ref: "#/components/schemas/RunStatus" }
+        verdict:       { $ref: "#/components/schemas/Verdict", nullable: true }
+        dataset_name:  { type: string }
+        config_name:   { type: string }
+        created_at:    { type: string, format: date-time }
+        started_at:    { type: string, format: date-time, nullable: true }
+        finished_at:   { type: string, format: date-time, nullable: true }
+        duration_sec:  { type: number, nullable: true }
+
+    RunDetail:
+      allOf:
+        - $ref: "#/components/schemas/RunSummary"
+        - type: object
+          properties:
+            model_id:        { type: string, format: uuid, nullable: true }
+            synth_rows:      { type: integer, nullable: true }
+            config_snapshot: { type: object, additionalProperties: true, nullable: true }
+            error_message:   { type: string, nullable: true }
+
+    RunListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/RunSummary" } }
+        meta:  { $ref: "#/components/schemas/PageMeta" }
+
+    DatasetSummary:
+      type: object
+      properties:
+        name:            { type: string }
+        uploaded_at:     { type: string, format: date-time }
+        rows:            { type: integer, nullable: true }
+        columns:         { type: integer, nullable: true }
+        file_size_bytes: { type: integer }
+
+    DatasetSchema:
+      type: object
+      properties:
+        categorical: { type: array, items: { type: string } }
+        continuous:  { type: array, items: { type: string } }
+        ignored:     { type: array, items: { type: string } }
+        detected_at: { type: string, format: date-time }
+
+    DatasetPreview:
+      type: object
+      properties:
+        columns: { type: array, items: { type: string } }
+        rows:    { type: array, items: { type: object, additionalProperties: true } }
+        stats:   { type: object, additionalProperties: true }
+
+    ModelSummary:
+      type: object
+      properties:
+        model_id:         { type: string, format: uuid }
+        name:             { type: string }
+        run_id:           { type: string, format: uuid, nullable: true }
+        dataset_name:     { type: string }
+        created_at:       { type: string, format: date-time }
+        file_size_bytes:  { type: integer }
+        epsilon:          { type: number, nullable: true }
+        epochs_completed: { type: integer, nullable: true }
+        spent_epsilon:    { type: number, nullable: true }
+
+    ModelDetail:
+      allOf:
+        - $ref: "#/components/schemas/ModelSummary"
+        - type: object
+          properties:
+            dp_config:   { type: object, additionalProperties: true, nullable: true }
+            dp_spent:    { type: object, additionalProperties: true, nullable: true }
+            sample_size: { type: integer, nullable: true }
+
+    SampleRequest:
+      type: object
+      required: [n_rows]
+      properties:
+        n_rows:        { type: integer, minimum: 1, example: 10000 }
+        output_format: { type: string, enum: [csv, json], default: csv }
+
+    ConfigSummary:
+      type: object
+      properties:
+        name:           { type: string }
+        created_at:     { type: string, format: date-time }
+        updated_at:     { type: string, format: date-time }
+        generator_type:
+          type: string
+          nullable: true
+          enum: [dpctgan, dptvae, ctgan, tvae, copulagan, null]
+        epsilon:        { type: number, nullable: true }
+        epochs:         { type: integer, nullable: true }
+
+    ConfigValidationResult:
+      type: object
+      properties:
+        valid:    { type: boolean }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:   { type: string }
+              message: { type: string }
+        warnings: { type: array, items: { type: string } }
+
+    Report:
+      type: object
+      description: |
+        Финальный отчёт пайплайна. Включает разделы `verdict`, `generator`,
+        `utility`, `privacy`, `data_processing.minimization`.
+      properties:
+        report_id:      { type: string, format: uuid }
+        process_id:     { type: string, format: uuid, nullable: true }
+        generated_at:   { type: string, format: date-time }
+        dataset_name:   { type: string }
+        generator_type: { type: string }
+        verdict:        { $ref: "#/components/schemas/VerdictBlock" }
+        generator:      { type: object, additionalProperties: true, nullable: true }
+        utility:        { type: object, additionalProperties: true, nullable: true }
+        privacy:        { type: object, additionalProperties: true, nullable: true }
+        data_processing:
+          type: object
+          properties:
+            minimization: { type: object, additionalProperties: true }
+
+    VerdictBlock:
+      type: object
+      properties:
+        overall:     { $ref: "#/components/schemas/Verdict" }
+        utility_ok:  { type: boolean, nullable: true }
+        privacy_ok:  { type: boolean, nullable: true }
+        dp_ok:       { type: boolean, nullable: true }
+        issues:      { type: array, items: { type: string } }

@@ -126,7 +126,7 @@ def get_dataset_schema(
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"Датасет '{name}' не найден"})
 
     import pandas as pd
-    from data_service.processor import DataProcessor
+    from data_processor.processor import DataProcessor
 
     df = pd.read_csv(path, na_values=["?"])
     processor = DataProcessor(df)

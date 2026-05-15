@@ -7,7 +7,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from reporter.reporter import Reporter, VerdictThresholds
+from services.reporting_service.reporter import Reporter, VerdictThresholds
 
 
 # ─────────────────────────────────────────────
